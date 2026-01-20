@@ -39,8 +39,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [gameId, setGameId] = useState(0);
   
-  // --- NOVO: ESTADO DE CARREGAMENTO INICIAL (SPLASH SCREEN) ---
-  const [isInitialLoading, setIsInitialLoading] = useState(true);
+  // REMOVIDO: const [isInitialLoading, setIsInitialLoading] = useState(true);
 
   // --- MODAIS ---
   const [isDepositOpen, setIsDepositOpen] = useState(false);
@@ -57,22 +56,20 @@ export default function Home() {
   const [winAmount, setWinAmount] = useState<string>('');
   const winAudioRef = useRef<HTMLAudioElement | null>(null);
 
-  // --- EFEITO INICIAL (SPLASH SCREEN + LOGICA) ---
+  // --- EFEITO INICIAL ---
   useEffect(() => {
     if (typeof window !== 'undefined') winAudioRef.current = new Audio('/win.mp3');
 
     const auth = getAuth(app);
     let unsubscribeSnapshot: any = null;
 
-    // Função para buscar dados iniciais
+    // Função para buscar dados iniciais (Layout e Jogos)
     const initData = async () => {
         try {
-            // 1. Busca Layout
             const docRef = doc(db, 'config', 'layout');
             const docSnap = await getDoc(docRef);
             if (docSnap.exists()) setLayoutConfig(docSnap.data());
 
-            // 2. Busca Jogos
             const querySnapshot = await getDocs(collection(db, 'games'));
             const list = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Game[];
             setGamesList(list);
@@ -81,15 +78,15 @@ export default function Home() {
         }
     };
 
-    // Executa busca de dados
     initData();
 
-    // 3. Listener de Auth + Controle do Splash Screen
+    // 3. Listener de Auth + POPUP IMEDIATO
     const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       
       if (currentUser) {
-        setIsAuthOpen(false); // Se logado, garante modal fechado
+        // Se logou, fecha o modal e busca saldo
+        setIsAuthOpen(false); 
         const userDocRef = doc(db, 'users', currentUser.uid);
         unsubscribeSnapshot = onSnapshot(userDocRef, (docSnap) => {
             if (docSnap.exists()) {
@@ -98,21 +95,13 @@ export default function Home() {
             }
         });
       } else {
+        // --- AQUI ESTÁ A MUDANÇA ---
+        // Se não tem usuário logado, ABRE O MODAL NA HORA
+        // Sem setTimeout, sem esperar nada.
         setBalance(0);
+        setIsAuthOpen(true);
         if (unsubscribeSnapshot) unsubscribeSnapshot();
       }
-
-      // --- A MÁGICA DO POPUP AUTOMÁTICO ---
-      // Só removemos a tela de carregamento após 2 segundos para dar tempo das imagens carregarem
-      // e para dar um efeito "Premium"
-      setTimeout(() => {
-          setIsInitialLoading(false);
-          
-          // SE NÃO TIVER USUÁRIO, ABRE O MODAL NA CARA DELE
-          if (!currentUser) {
-              setIsAuthOpen(true);
-          }
-      }, 2000); 
     });
 
     return () => {
@@ -301,30 +290,6 @@ export default function Home() {
 
   return (
     <>
-      {/* =========================================================================== */}
-      {/* 0. SPLASH SCREEN (TELA DE CARREGAMENTO) */}
-      {/* =========================================================================== */}
-      {isInitialLoading && (
-        <div className="fixed inset-0 z-[100] bg-zinc-950 flex flex-col items-center justify-center animate-out fade-out duration-700 fill-mode-forwards">
-             {/* Logo ou Ícone Pulsando */}
-             <div className="relative">
-                 {layoutConfig.logo ? (
-                     <img src={layoutConfig.logo} alt="Carregando" className="h-24 w-auto object-contain animate-pulse" />
-                 ) : (
-                     <div className="w-20 h-20 rounded-2xl flex items-center justify-center animate-pulse" style={{ backgroundColor: layoutConfig.color }}>
-                         <Zap className="text-black fill-current w-10 h-10" />
-                     </div>
-                 )}
-                 {/* Spinner em volta ou embaixo */}
-                 <div className="absolute -bottom-12 left-1/2 -translate-x-1/2">
-                     <Loader2 className="animate-spin text-zinc-600 w-6 h-6" />
-                 </div>
-             </div>
-             
-             <p className="mt-16 text-zinc-500 text-xs font-bold uppercase tracking-[0.2em] animate-pulse">Carregando Cassino...</p>
-        </div>
-      )}
-
       {/* =========================================================================== */}
       {/* 1. LAYOUT MOBILE */}
       {/* =========================================================================== */}
