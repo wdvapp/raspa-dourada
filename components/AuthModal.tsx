@@ -19,7 +19,7 @@ interface AuthModalProps {
 }
 
 export function AuthModal({ isOpen, onClose, onLoginSuccess }: AuthModalProps) {
-  const [isLogin, setIsLogin] = useState(true);
+  const [isLogin, setIsLogin] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   

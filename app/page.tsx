@@ -6,10 +6,10 @@ import DepositModal from '../components/DepositModal';
 import { AuthModal } from '../components/AuthModal'; 
 import confetti from 'canvas-confetti';
 import { db, app } from '../lib/firebase';
-import { doc, getDoc, collection, getDocs, onSnapshot, updateDoc, increment } from 'firebase/firestore'; // ADICIONADO: onSnapshot
+import { doc, getDoc, collection, getDocs, onSnapshot, updateDoc, increment } from 'firebase/firestore'; 
 import { getAuth, onAuthStateChanged, signOut } from 'firebase/auth';
 import {
-  User, Trophy, ChevronLeft, Home as HomeIcon, Grid, PlusCircle, Bell, Zap, Star, XCircle, RotateCw, Gift, ChevronRight, Play, LogOut
+  User, Trophy, ChevronLeft, Home as HomeIcon, Grid, PlusCircle, Bell, Zap, Star, XCircle, RotateCw, Gift, ChevronRight, Play, LogOut, Loader2
 } from 'lucide-react';
 
 interface Prize {
@@ -31,7 +31,7 @@ interface Game {
 export default function Home() {
   // --- ESTADOS GERAIS ---
   const [user, setUser] = useState<any>(null);
-  const [balance, setBalance] = useState(0); // NOVO: Estado do Saldo
+  const [balance, setBalance] = useState(0); 
   const [view, setView] = useState<'LOBBY' | 'GAME'>('LOBBY');
   const [gamesList, setGamesList] = useState<Game[]>([]);
   const [activeGame, setActiveGame] = useState<any>(null);
@@ -39,6 +39,9 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [gameId, setGameId] = useState(0);
   
+  // --- NOVO: ESTADO DE CARREGAMENTO INICIAL (SPLASH SCREEN) ---
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
+
   // --- MODAIS ---
   const [isDepositOpen, setIsDepositOpen] = useState(false);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
@@ -54,56 +57,64 @@ export default function Home() {
   const [winAmount, setWinAmount] = useState<string>('');
   const winAudioRef = useRef<HTMLAudioElement | null>(null);
 
-  // --- EFEITO INICIAL (Busca Jogos + Verifica Login + SALDO REAL) ---
+  // --- EFEITO INICIAL (SPLASH SCREEN + LOGICA) ---
   useEffect(() => {
     if (typeof window !== 'undefined') winAudioRef.current = new Audio('/win.mp3');
 
     const auth = getAuth(app);
-    let unsubscribeSnapshot: any = null; // Variável para limpar o ouvinte do saldo
+    let unsubscribeSnapshot: any = null;
 
-    // 1. Verifica login E conecta o saldo
+    // Função para buscar dados iniciais
+    const initData = async () => {
+        try {
+            // 1. Busca Layout
+            const docRef = doc(db, 'config', 'layout');
+            const docSnap = await getDoc(docRef);
+            if (docSnap.exists()) setLayoutConfig(docSnap.data());
+
+            // 2. Busca Jogos
+            const querySnapshot = await getDocs(collection(db, 'games'));
+            const list = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Game[];
+            setGamesList(list);
+        } catch (error) {
+            console.error("Erro carregamento inicial", error);
+        }
+    };
+
+    // Executa busca de dados
+    initData();
+
+    // 3. Listener de Auth + Controle do Splash Screen
     const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       
       if (currentUser) {
-        setIsAuthOpen(false);
-        // --- NOVO: CONEXÃO EM TEMPO REAL COM O SALDO ---
+        setIsAuthOpen(false); // Se logado, garante modal fechado
         const userDocRef = doc(db, 'users', currentUser.uid);
         unsubscribeSnapshot = onSnapshot(userDocRef, (docSnap) => {
             if (docSnap.exists()) {
                 const data = docSnap.data();
-                setBalance(data.balance || 0); // Atualiza o saldo na tela
+                setBalance(data.balance || 0);
             }
         });
-        // ------------------------------------------------
       } else {
         setBalance(0);
         if (unsubscribeSnapshot) unsubscribeSnapshot();
       }
+
+      // --- A MÁGICA DO POPUP AUTOMÁTICO ---
+      // Só removemos a tela de carregamento após 2 segundos para dar tempo das imagens carregarem
+      // e para dar um efeito "Premium"
+      setTimeout(() => {
+          setIsInitialLoading(false);
+          
+          // SE NÃO TIVER USUÁRIO, ABRE O MODAL NA CARA DELE
+          if (!currentUser) {
+              setIsAuthOpen(true);
+          }
+      }, 2000); 
     });
 
-    // 2. Busca Layout
-    const fetchLayout = async () => {
-      try {
-        const docRef = doc(db, 'config', 'layout');
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) setLayoutConfig(docSnap.data());
-      } catch (error) { console.log('Erro layout', error); }
-    };
-
-    // 3. Busca Jogos
-    const fetchGames = async () => {
-        try {
-            const querySnapshot = await getDocs(collection(db, 'games'));
-            const list = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Game[];
-            setGamesList(list);
-        } catch (error) { console.error("Erro ao buscar jogos", error); }
-    };
-
-    fetchLayout();
-    fetchGames();
-    
-    // Limpeza ao sair da tela
     return () => {
         unsubscribeAuth();
         if (unsubscribeSnapshot) unsubscribeSnapshot();
@@ -125,9 +136,6 @@ export default function Home() {
       setIsAuthOpen(true); 
       return;
     }
-    // Opcional: Bloquear se não tiver saldo
-    // if (balance < game.price) { alert("Saldo insuficiente!"); setIsDepositOpen(true); return; }
-
     setActiveGame(game);
     setView('GAME');
     setTimeout(() => { setPrizesGrid([]); setLoading(true); }, 100);
@@ -142,23 +150,17 @@ export default function Home() {
   const playRound = async () => {
     if (!activeGame) return;
     
-    // 1. VERIFICAÇÃO DE SALDO
     if (balance < activeGame.price) {
-        // Abre o modal de depósito se não tiver dinheiro
         setIsDepositOpen(true); 
         return;
     }
 
-    // 2. DESCONTA O DINHEIRO NO BANCO DE DADOS (NOVO!)
     if (user) {
         const userRef = doc(db, 'users', user.uid);
         await updateDoc(userRef, {
-            balance: increment(-activeGame.price) // Subtrai o preço do jogo
+            balance: increment(-activeGame.price)
         });
     }
-
-    setLoading(true);
-    // ... (o resto da função continua igual) ...
 
     setLoading(true);
     setIsGameFinished(false);
@@ -170,7 +172,6 @@ export default function Home() {
     if (winAudioRef.current) { winAudioRef.current.pause(); winAudioRef.current.currentTime = 0; }
     await new Promise(resolve => setTimeout(resolve, 500));
 
-    // LÓGICA DE MARKETING (Mantida)
     let forcedPrize: Prize | null = null;
     let forceLoss = false;
     const storedConfig = typeof window !== 'undefined' ? localStorage.getItem('marketing_config') : null;
@@ -268,17 +269,13 @@ export default function Home() {
       setWinningIndices(result.indices);
       setWinAmount(result.amount);
       triggerWin();
-      // --- CÓDIGO NOVO: PAGAR O PRÊMIO ---
           if (user) {
-              // Busca o valor numérico do prêmio direto no grid usando o índice
               const prizeValue = prizesGrid[result.indices[0]].value;
-              
               const userRef = doc(db, 'users', user.uid);
               updateDoc(userRef, {
-                  balance: increment(prizeValue) // Soma o prêmio ao saldo
+                  balance: increment(prizeValue)
               });
           }
-          // ------------------------------------
     } else { setResultType('LOSS'); }
     setTimeout(() => { setShowPopup(true); }, 500);
   };
@@ -305,6 +302,30 @@ export default function Home() {
   return (
     <>
       {/* =========================================================================== */}
+      {/* 0. SPLASH SCREEN (TELA DE CARREGAMENTO) */}
+      {/* =========================================================================== */}
+      {isInitialLoading && (
+        <div className="fixed inset-0 z-[100] bg-zinc-950 flex flex-col items-center justify-center animate-out fade-out duration-700 fill-mode-forwards">
+             {/* Logo ou Ícone Pulsando */}
+             <div className="relative">
+                 {layoutConfig.logo ? (
+                     <img src={layoutConfig.logo} alt="Carregando" className="h-24 w-auto object-contain animate-pulse" />
+                 ) : (
+                     <div className="w-20 h-20 rounded-2xl flex items-center justify-center animate-pulse" style={{ backgroundColor: layoutConfig.color }}>
+                         <Zap className="text-black fill-current w-10 h-10" />
+                     </div>
+                 )}
+                 {/* Spinner em volta ou embaixo */}
+                 <div className="absolute -bottom-12 left-1/2 -translate-x-1/2">
+                     <Loader2 className="animate-spin text-zinc-600 w-6 h-6" />
+                 </div>
+             </div>
+             
+             <p className="mt-16 text-zinc-500 text-xs font-bold uppercase tracking-[0.2em] animate-pulse">Carregando Cassino...</p>
+        </div>
+      )}
+
+      {/* =========================================================================== */}
       {/* 1. LAYOUT MOBILE */}
       {/* =========================================================================== */}
       <div className="md:hidden min-h-screen bg-zinc-950 text-white font-sans pb-24" style={{ selectionBackgroundColor: layoutConfig.color } as any}>
@@ -322,7 +343,6 @@ export default function Home() {
             <div className="flex flex-col cursor-pointer" onClick={handleOpenDeposit}>
               <span className="text-xs text-zinc-400 font-medium">{user ? 'Saldo Disponível' : 'Faça Login'}</span>
               <span className="text-sm font-bold text-white flex items-center gap-1">
-                {/* Aqui está a mágica: mostramos a variável 'balance' formatada */}
                 {user ? `R$ ${balance.toLocaleString('pt-BR', {minimumFractionDigits: 2})}` : 'Entrar'} 
                 <PlusCircle size={14} style={{ color: layoutConfig.color }} />
               </span>
@@ -491,8 +511,8 @@ export default function Home() {
                     </>
                 ) : (
                     <>
-                         <button onClick={() => setIsAuthOpen(true)} className="bg-zinc-800 hover:bg-zinc-700 text-white px-6 py-2.5 rounded-lg font-bold text-sm transition-colors">Cadastrar</button>
-                         <button onClick={() => setIsAuthOpen(true)} className="bg-yellow-500 hover:bg-yellow-400 text-black px-6 py-2.5 rounded-lg font-black text-sm flex items-center gap-2 transition-colors">ENTRAR</button>
+                          <button onClick={() => setIsAuthOpen(true)} className="bg-zinc-800 hover:bg-zinc-700 text-white px-6 py-2.5 rounded-lg font-bold text-sm transition-colors">Cadastrar</button>
+                          <button onClick={() => setIsAuthOpen(true)} className="bg-yellow-500 hover:bg-yellow-400 text-black px-6 py-2.5 rounded-lg font-black text-sm flex items-center gap-2 transition-colors">ENTRAR</button>
                     </>
                 )}
             </div>
