@@ -1,22 +1,10 @@
 'use client';
 
 import React from 'react';
-import { Theater, Coins, Ticket, XCircle, PartyPopper, Music, Star } from 'lucide-react';
+import { Theater, Music } from 'lucide-react';
 
-// --- CONFIGURAÇÃO DOS PRÊMIOS ---
-// Exportamos essa constante para o page.tsx usar na lógica
-export const WHEEL_PRIZES = [
-  { label: 'R$ 5', value: 5, type: 'money', color: '#00C851', textColor: 'white', icon: <Coins size={24} /> }, // Verde
-  { label: '10 Giros', value: 10, type: 'scratch', color: '#ff4444', textColor: 'white', icon: <Ticket size={24} /> }, // Vermelho
-  { label: 'Não foi', value: 0, type: 'loss', color: '#33b5e5', textColor: 'white', icon: <XCircle size={24} /> }, // Azul
-  { label: 'R$ 2', value: 2, type: 'money', color: '#FFD700', textColor: 'black', icon: <Coins size={24} /> }, // Dourado
-  { label: 'Bônus', value: 0, type: 'bonus', color: '#aa66cc', textColor: 'white', icon: <PartyPopper size={24} /> }, // Roxo
-  { label: '5 Giros', value: 5, type: 'scratch', color: '#FF8800', textColor: 'white', icon: <Ticket size={24} /> }, // Laranja
-  { label: 'Tente+', value: 0, type: 'loss', color: '#2BBBAD', textColor: 'white', icon: <Theater size={24} /> }, // Turquesa
-  { label: 'R$ 1', value: 1, type: 'money', color: '#ffbb33', textColor: 'black', icon: <Coins size={24} /> }, // Amarelo
-];
-
-const SEGMENT_ANGLE = 360 / WHEEL_PRIZES.length;
+// A constante WHEEL_PRIZES foi removida daqui pois agora é visual.
+// A lógica de qual prêmio cai continua no page.tsx.
 
 interface CarnivalWheelProps {
   isSpinning: boolean;
@@ -36,54 +24,21 @@ export default function CarnivalWheel({ isSpinning, rotationAngle, onSpinClick, 
 
       {/* 2. Seta Indicadora (Topo) */}
       <div className="absolute -top-6 left-1/2 -translate-x-1/2 z-30 drop-shadow-lg">
-        {/* Triângulo invertido */}
-        <div className="w-0 h-0 border-l-[20px] border-l-transparent border-r-[20px] border-r-transparent border-t-[30px] border-t-[#FFD700]"></div>
+        <Theater size={48} fill="#FFD700" stroke="#FFF" strokeWidth={2} />
       </div>
 
-      {/* 3. A Roleta Giratória */}
+      {/* 3. A Imagem da Roleta Giratória */}
       <div
         className="w-full h-full rounded-full relative overflow-hidden z-10 shadow-2xl transition-transform duration-[5000ms] cubic-bezier(0.15, 0, 0.15, 1) border-4 border-[#FFD700]"
         style={{
           transform: `rotate(${rotationAngle}deg)`,
-          background: '#333' // Cor de fundo de segurança
+          // A imagem deve estar na pasta "public" com este nome
+          backgroundImage: 'url(/roulette_wheel.png)', 
+          backgroundSize: 'cover',
+          backgroundPosition: 'center'
         }}
       >
-        {/* Renderiza as Fatias */}
-        {WHEEL_PRIZES.map((prize, index) => {
-          const rotation = index * SEGMENT_ANGLE;
-          return (
-            <div
-              key={index}
-              className="absolute top-0 left-1/2 w-1/2 h-1/2 origin-bottom-left"
-              style={{
-                transform: `rotate(${rotation}deg) skewY(-${90 - SEGMENT_ANGLE}deg)`,
-                background: prize.color,
-                borderRight: '1px solid rgba(255,255,255,0.2)'
-              }}
-            >
-              {/* Conteúdo da Fatia (Texto e Ícone) - Desentortando o Skew */}
-              <div 
-                className="absolute flex flex-col items-center justify-center text-center w-full h-full"
-                style={{ 
-                    transform: `skewY(${90 - SEGMENT_ANGLE}deg) rotate(${SEGMENT_ANGLE / 2}deg) translate(30px, 40px)`, 
-                    // Ajuste o translate(X, Y) para mover o texto mais para a borda ou centro
-                }}
-              >
-                {/* Ícone */}
-                <div style={{ color: prize.textColor, transform: 'rotate(-90deg)' }} className="mb-1 drop-shadow-md">
-                    {prize.icon}
-                </div>
-                {/* Texto */}
-                <span 
-                    className="font-black text-[12px] uppercase whitespace-nowrap drop-shadow-sm"
-                    style={{ color: prize.textColor, transform: 'rotate(-90deg)' }}
-                >
-                  {prize.label}
-                </span>
-              </div>
-            </div>
-          );
-        })}
+        {/* Não há mais código de fatias aqui, apenas a imagem de fundo gira */}
       </div>
 
       {/* 4. Botão Central (Fixo) */}
