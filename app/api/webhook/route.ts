@@ -1,93 +1,93 @@
 import { NextResponse } from 'next/server';
-import { db } from '../../../lib/firebase';
-import { collection, query, where, getDocs, updateDoc, doc, increment, getDoc, setDoc } from 'firebase/firestore';
+// Tenta importar com @, se der erro no editor, mantenha o ../../../lib/firebase
+import { db } from '@/lib/firebase'; 
+import { collection, query, where, getDocs, updateDoc, doc, increment, getDoc, addDoc, serverTimestamp } from 'firebase/firestore';
 
 export async function POST(req: Request) {
   try {
-    console.log("--- WEBHOOK PIXUP (CORREÇÃO REQUESTBODY) ---");
+    console.log("--- WEBHOOK ESPIÃO INICIADO ---");
     
-    // 1. Recebe os dados brutos
+    // 1. Recebe e Analisa o Body
     const body = await req.json();
-    console.log("Payload Recebido:", JSON.stringify(body, null, 2));
-
-    // 2. DESEMBRULHA O PACOTE (O Segredo estava aqui!)
-    // A Pixup manda tudo dentro de "requestBody".
-    // Se vier solto (teste manual), usa o body direto. Se vier da Pixup, usa requestBody.
+    
+    // O pulo do gato: A Pixup manda dentro de 'requestBody'
     const data = body.requestBody || body;
-
     const { transactionId, status, external_id, amount } = data;
 
-    // Validação de segurança
-    if (!transactionId || !status) {
-        console.error("Dados incompletos:", data);
-        return NextResponse.json({ error: 'Dados inválidos' }, { status: 400 });
+    // 2. 🚨 GRAVA O LOG NO FIREBASE (Para a gente ver o que está chegando)
+    // Se isso aparecer no seu banco, a conexão Pixup -> Vercel está funcionando!
+    try {
+        await addDoc(collection(db, 'webhook_logs'), {
+            receivedAt: serverTimestamp(),
+            full_payload: body,      // O que chegou bruto
+            processed_data: data,    // O que a gente extraiu
+            txid_buscado: transactionId,
+            status_recebido: status,
+            amount_recebido: amount
+        });
+    } catch (e) {
+        console.error("Erro ao salvar log de debug:", e);
     }
 
-    // 3. Verifica se pagou (Pixup manda "PAID")
-    const isPaid = status === 'PAID' || status === 'paid' || status === 'approved';
+    // 3. Validação
+    if (!transactionId || !status) {
+        return NextResponse.json({ error: 'Dados incompletos (Verifique webhook_logs no Firebase)' }, { status: 400 });
+    }
+
+    // Aceita PAID, paid, APPROVED, etc.
+    const isPaid = ['PAID', 'paid', 'APPROVED', 'approved', 'COMPLETED', 'completed'].includes(status);
 
     if (!isPaid) {
-        console.log("Status não é de pagamento:", status);
-        return NextResponse.json({ received: true });
+        return NextResponse.json({ message: `Status ${status} ignorado` });
     }
 
-    // 4. Busca o depósito no Firebase pelo ID da Transação
+    // 4. Busca e Atualiza o Depósito
     const depositsRef = collection(db, 'deposits');
-    const q = query(depositsRef, where('txid', '==', transactionId));
-    const querySnapshot = await getDocs(q);
+    
+    // Tenta achar pelo ID da Transação (txid)
+    let q = query(depositsRef, where('txid', '==', transactionId));
+    let querySnapshot = await getDocs(q);
+
+    // Se não achar pelo txid, tenta pelo external_id (plano B)
+    if (querySnapshot.empty && external_id) {
+        q = query(depositsRef, where('external_id', '==', external_id));
+        querySnapshot = await getDocs(q);
+    }
 
     if (querySnapshot.empty) {
-        // Tenta buscar pelo external_id se falhar pelo txid
-        console.log("TxID não achado, tentando por External ID:", external_id);
-        const qExt = query(depositsRef, where('external_id', '==', external_id));
-        const snapExt = await getDocs(qExt);
-        
-        if (snapExt.empty) {
-            console.error("Depósito não encontrado nem por ID nem por External ID.");
-            return NextResponse.json({ error: 'Depósito não encontrado' }, { status: 404 });
-        }
-        // Achou pelo external_id
-        await processarPagamento(snapExt.docs[0], amount);
-    } else {
-        // Achou pelo transactionId
-        await processarPagamento(querySnapshot.docs[0], amount);
+        return NextResponse.json({ error: 'Depósito não encontrado no banco' }, { status: 404 });
     }
+
+    const depositDoc = querySnapshot.docs[0];
+    const depositData = depositDoc.data();
+
+    if (depositData.status === 'completed') {
+        return NextResponse.json({ message: 'Já estava pago' });
+    }
+
+    // 5. Libera o Saldo
+    if (depositData.userId && depositData.userId !== 'anonimo') {
+        const userRef = doc(db, 'users', depositData.userId);
+        await updateDoc(userRef, {
+            balance: increment(Number(amount))
+        });
+    }
+
+    await updateDoc(depositDoc.ref, {
+        status: 'completed',
+        paidAt: new Date(),
+        webhook_log: 'sucesso_espiao'
+    });
 
     return NextResponse.json({ success: true });
 
   } catch (error: any) {
-    console.error("ERRO NO WEBHOOK:", error);
+    console.error("ERRO CRÍTICO:", error);
+    // Tenta salvar o erro no firebase também
+    try {
+        await addDoc(collection(db, 'webhook_logs'), { error: error.message, date: serverTimestamp() });
+    } catch(e) {}
+    
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
-}
-
-// Função auxiliar para evitar repetição de código
-async function processarPagamento(depositDoc: any, amountPix: number) {
-    const depositData = depositDoc.data();
-
-    // Evita pagamento duplo
-    if (depositData.status === 'completed') {
-        console.log("Depósito já estava pago. Ignorando.");
-        return;
-    }
-
-    // Atualiza saldo do usuário
-    if (depositData.userId && depositData.userId !== 'anonimo') {
-        const userRef = doc(db, 'users', depositData.userId);
-        const userSnap = await getDoc(userRef);
-        
-        if (userSnap.exists()) {
-            await updateDoc(userRef, {
-                balance: increment(Number(amountPix)) 
-            });
-            console.log(`✅ SUCESSO! R$ ${amountPix} entregues para ${depositData.userId}`);
-        }
-    }
-
-    // Marca depósito como concluído
-    await updateDoc(depositDoc.ref, {
-        status: 'completed',
-        paidAt: new Date(),
-        gateway_status: 'PAID'
-    });
 }
