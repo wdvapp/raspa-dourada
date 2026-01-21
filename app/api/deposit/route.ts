@@ -16,14 +16,14 @@ function gerarCpfFalso() {
 
 export async function POST(req: Request) {
   try {
-    console.log("--- INICIANDO DEPÓSITO (CORREÇÃO POSTBACK) ---");
+    console.log("--- INICIANDO DEPÓSITO (CORREÇÃO WWW) ---");
 
     const PIXUP_URL = process.env.PIXUP_API_URL;
     const CLIENT_ID = process.env.PIXUP_CLIENT_ID;
     const CLIENT_SECRET = process.env.PIXUP_CLIENT_SECRET;
 
-    // Confirme se este é o seu domínio na Vercel
-    const SEU_SITE = 'https://raspadourada.com'; 
+    // --- A CORREÇÃO ESTÁ AQUI: ADICIONAMOS O WWW ---
+    const SEU_SITE = 'https://www.raspadourada.com'; 
     const WEBHOOK_URL = `${SEU_SITE}/api/webhook`;
 
     if (!PIXUP_URL || !CLIENT_ID || !CLIENT_SECRET) {
@@ -45,7 +45,7 @@ export async function POST(req: Request) {
         throw new Error(`Falha Auth Pixup: ${JSON.stringify(authData)}`);
     }
 
-    // 2. GERAR QR CODE (Com postbackUrl correto)
+    // 2. GERAR QR CODE
     const external_id = `raspa_${Date.now()}`;
     const cpfPagador = gerarCpfFalso(); 
 
@@ -59,7 +59,7 @@ export async function POST(req: Request) {
             amount: parseFloat(amount),
             external_id: external_id,
             payerQuestion: "Creditos Raspa Dourada",
-            postbackUrl: WEBHOOK_URL, // <--- AQUI ESTAVA O ERRO! AGORA VAI.
+            postbackUrl: WEBHOOK_URL, // Agora aponta para www.raspadourada.com
             payer: {
                 name: "Cliente Raspa Dourada",
                 document: cpfPagador
