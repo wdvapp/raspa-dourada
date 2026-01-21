@@ -5,14 +5,13 @@ import { collection, query, where, getDocs, updateDoc, doc, increment } from 'fi
 export async function POST(req: Request) {
   try {
     const { txid } = await req.json();
-    console.log("🔍 [AUTO-CHECK V2] Buscando:", txid);
-
+    
     // 1. Configuração e Firebase
     const PIXUP_URL = process.env.PIXUP_API_URL;
     const CLIENT_ID = process.env.PIXUP_CLIENT_ID;
     const CLIENT_SECRET = process.env.PIXUP_CLIENT_SECRET;
 
-    if (!PIXUP_URL) return NextResponse.json({ error: 'Configuração inválida na Vercel' }, { status: 500 });
+    if (!PIXUP_URL) return NextResponse.json({ error: 'Configuração inválida' }, { status: 500 });
 
     const depositsRef = collection(db, 'deposits');
     const q = query(depositsRef, where('txid', '==', txid));
@@ -33,71 +32,38 @@ export async function POST(req: Request) {
         headers: { 'Authorization': `Basic ${credentials}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ grant_type: 'client_credentials' })
     });
-
-    if (!authResponse.ok) return NextResponse.json({ error: 'Erro Auth Pixup' }, { status: 400 });
     const { access_token } = await authResponse.json();
 
-    // 3. TENTATIVA MULTI-ROTAS (Aqui corrigimos o erro 405)
-    let pixupData = null;
-    let found = false;
-
-    // Lista de Endpoints prováveis para CONSULTA (GET)
-    // O erro 405 indicou que /qrcode/ID não aceita GET. Vamos tentar as alternativas padrão.
-    const endpointsParaTestar = [
-        `${PIXUP_URL}/v2/pix/orders/${txid}`,        // Padrão de mercado 1
-        `${PIXUP_URL}/v2/pix/transactions/${txid}`,  // Padrão de mercado 2
-        `${PIXUP_URL}/v2/pix/charges/${txid}`,       // Padrão de mercado 3
-    ];
-
-    console.log("--- Iniciando Varredura de Endpoints ---");
-
-    for (const url of endpointsParaTestar) {
-        if (found) break; // Se já achou, para.
-        try {
-            console.log(`Tentando: ${url}`);
-            const resp = await fetch(url, {
-                method: 'GET',
-                headers: { 'Authorization': `Bearer ${access_token}` }
-            });
-
-            if (resp.ok) {
-                pixupData = await resp.json();
-                console.log(`✅ SUCESSO na URL: ${url}`);
-                found = true;
-            } else {
-                console.log(`❌ Falha (${resp.status}) na URL: ${url}`);
-            }
-        } catch (e) {
-            console.log(`Erro de conexão na URL: ${url}`);
-        }
+    // 3. CONSULTA (Estratégia: Filtro por External ID)
+    // Muitos sistemas bloqueiam GET /id mas aceitam GET ?external_id=...
+    console.log("Tentando consulta por filtro...");
+    
+    const url = `${PIXUP_URL}/v2/pix/qrcode?external_id=${depositData.external_id}`;
+    
+    const resp = await fetch(url, {
+        headers: { 'Authorization': `Bearer ${access_token}` }
+    });
+    
+    // Se der 405 de novo, retornamos erro amigável
+    if (resp.status === 405) {
+        return NextResponse.json({ 
+            error: 'A Pixup não permite consulta manual (Erro 405).',
+            detail: 'Por favor, aguarde o processamento automático.' 
+        }, { status: 400 });
     }
 
-    // TENTATIVA FINAL: Por External ID (Se as rotas por ID falharam)
-    if (!found && depositData.external_id) {
-        console.log("Tentando busca por External ID...");
-        const urlExt = `${PIXUP_URL}/v2/pix/qrcode?external_id=${depositData.external_id}`;
-        const respExt = await fetch(urlExt, {
-             headers: { 'Authorization': `Bearer ${access_token}` }
-        });
-        if (respExt.ok) {
-            const list = await respExt.json();
-            if (Array.isArray(list) && list.length > 0) {
-                pixupData = list[0];
-                found = true;
-            } else if (list && !Array.isArray(list)) {
-                 pixupData = list;
-                 found = true;
-            }
-        }
+    if (!resp.ok) {
+        const text = await resp.text();
+        return NextResponse.json({ error: `Erro na API Pixup: ${resp.status}`, detail: text }, { status: 400 });
     }
 
-    if (!found || !pixupData) {
-        return NextResponse.json({ error: 'Não foi possível consultar o status em nenhum endpoint.' }, { status: 400 });
-    }
+    const data = await resp.json();
+    
+    // O retorno pode ser uma lista ou um objeto
+    let transaction = Array.isArray(data) ? data[0] : data;
 
     // 4. Liberação
-    // Verifica status em qualquer formato que vier
-    const status = pixupData.status || pixupData.tx?.status || pixupData.situacao || '';
+    const status = transaction?.status || transaction?.tx?.status || '';
     const isPaid = ['PAID', 'COMPLETED', 'APPROVED', 'CONCLUDED', 'ATIVA', 'CONCLUIDA'].includes(status.toUpperCase());
 
     if (isPaid) {
@@ -105,11 +71,11 @@ export async function POST(req: Request) {
             const userRef = doc(db, 'users', depositData.userId);
             await updateDoc(userRef, { balance: increment(depositData.amount) });
         }
-        await updateDoc(depositDoc.ref, { status: 'completed', paidAt: new Date(), method: 'manual_check_v3' });
-        return NextResponse.json({ status: 'PAID', message: 'Pagamento confirmado!' });
+        await updateDoc(depositDoc.ref, { status: 'completed', paidAt: new Date(), method: 'manual_filter_v4' });
+        return NextResponse.json({ status: 'PAID', message: 'Confirmado!' });
     }
 
-    return NextResponse.json({ status: 'PENDING', message: `Status atual: ${status || 'Pendente'}` });
+    return NextResponse.json({ status: 'PENDING', message: 'Aguardando pagamento...' });
 
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });

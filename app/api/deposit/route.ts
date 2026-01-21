@@ -2,7 +2,6 @@ import { NextResponse } from 'next/server';
 import { db } from '../../../lib/firebase';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 
-// Função para gerar CPF válido aleatório (para passar na validação do banco)
 function gerarCpfFalso() {
   const r = () => Math.floor(Math.random() * 9);
   const n = [r(), r(), r(), r(), r(), r(), r(), r(), r()];
@@ -17,14 +16,13 @@ function gerarCpfFalso() {
 
 export async function POST(req: Request) {
   try {
-    console.log("--- INICIANDO DEPÓSITO COM WEBHOOK DINÂMICO ---");
+    console.log("--- INICIANDO DEPÓSITO (CORREÇÃO POSTBACK) ---");
 
     const PIXUP_URL = process.env.PIXUP_API_URL;
     const CLIENT_ID = process.env.PIXUP_CLIENT_ID;
     const CLIENT_SECRET = process.env.PIXUP_CLIENT_SECRET;
 
-    // IMPORTANTE: Troque pelo seu domínio REAL que está na Vercel
-    // Não funciona com localhost!
+    // Confirme se este é o seu domínio na Vercel
     const SEU_SITE = 'https://raspadourada.com'; 
     const WEBHOOK_URL = `${SEU_SITE}/api/webhook`;
 
@@ -34,25 +32,20 @@ export async function POST(req: Request) {
 
     const { amount, email, userId } = await req.json();
 
-    // 1. AUTENTICAÇÃO (Basic Auth)
+    // 1. AUTENTICAÇÃO
     const credentials = Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString('base64');
-    
     const authResponse = await fetch(`${PIXUP_URL}/v2/oauth/token`, {
         method: 'POST',
-        headers: {
-            'Authorization': `Basic ${credentials}`,
-            'Content-Type': 'application/json'
-        },
+        headers: { 'Authorization': `Basic ${credentials}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ grant_type: 'client_credentials' })
     });
 
     const authData = await authResponse.json();
     if (!authResponse.ok || !authData.access_token) {
-        console.error("ERRO AUTH:", authData);
         throw new Error(`Falha Auth Pixup: ${JSON.stringify(authData)}`);
     }
 
-    // 2. GERAR QR CODE (Enviando o callbackUrl)
+    // 2. GERAR QR CODE (Com postbackUrl correto)
     const external_id = `raspa_${Date.now()}`;
     const cpfPagador = gerarCpfFalso(); 
 
@@ -66,7 +59,7 @@ export async function POST(req: Request) {
             amount: parseFloat(amount),
             external_id: external_id,
             payerQuestion: "Creditos Raspa Dourada",
-            callbackUrl: WEBHOOK_URL, // <--- AQUI ESTÁ O SEGREDO!
+            postbackUrl: WEBHOOK_URL, // <--- AQUI ESTAVA O ERRO! AGORA VAI.
             payer: {
                 name: "Cliente Raspa Dourada",
                 document: cpfPagador
@@ -77,26 +70,21 @@ export async function POST(req: Request) {
     const qrData = await qrResponse.json();
 
     if (!qrData.qrcode || !qrData.transactionId) {
-        console.error("ERRO GERAÇÃO:", qrData);
         throw new Error(`Erro Pixup: ${JSON.stringify(qrData)}`);
     }
 
-    // 3. TENTA SALVAR NO FIREBASE
-    try {
-        await addDoc(collection(db, 'deposits'), {
-            txid: qrData.transactionId,
-            external_id: external_id,
-            userId: userId || 'anonimo',
-            email: email || 'anonimo',
-            amount: amount,
-            status: 'pending',
-            createdAt: serverTimestamp(),
-            gateway: 'pixup',
-            pixCopiaECola: qrData.qrcode
-        });
-    } catch (e) {
-        console.error("Aviso: Pix gerado mas não salvo no banco", e);
-    }
+    // 3. SALVAR NO FIREBASE
+    await addDoc(collection(db, 'deposits'), {
+        txid: qrData.transactionId,
+        external_id: external_id,
+        userId: userId || 'anonimo',
+        email: email || 'anonimo',
+        amount: amount,
+        status: 'pending',
+        createdAt: serverTimestamp(),
+        gateway: 'pixup',
+        pixCopiaECola: qrData.qrcode
+    });
 
     const qrCodeImage = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(qrData.qrcode)}`;
 
