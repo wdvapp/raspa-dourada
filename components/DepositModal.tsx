@@ -15,7 +15,7 @@ export default function DepositModal({ isOpen, onClose, userId, userEmail }: Dep
   const [loading, setLoading] = useState(false);
   const [qrCode, setQrCode] = useState<string | null>(null);
   const [copyCode, setCopyCode] = useState<string | null>(null);
-  const [txid, setTxid] = useState<string | null>(null); // Novo estado para ID da transação
+  const [txid, setTxid] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
@@ -33,7 +33,7 @@ export default function DepositModal({ isOpen, onClose, userId, userEmail }: Dep
         if (response.ok) {
             setQrCode(data.qrcode_image);
             setCopyCode(data.qrcode_text);
-            setTxid(data.txid); // Salva o ID para checar depois
+            setTxid(data.txid);
         } else {
             setError('Erro ao gerar Pix. Tente novamente.');
         }
@@ -43,24 +43,33 @@ export default function DepositModal({ isOpen, onClose, userId, userEmail }: Dep
   const handleCheckPayment = async () => {
       if (!txid) return;
       setLoading(true);
+      setError('');
       try {
           const response = await fetch('/api/check-payment', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ txid })
           });
+          
           const data = await response.json();
           
+          // --- MUDANÇA AQUI: Alerta o erro técnico na tela ---
+          if (!response.ok) {
+              alert(`ERRO TÉCNICO PIXUP:\n${JSON.stringify(data, null, 2)}`);
+              setError('Erro na consulta. Me mande o print do alerta!');
+              return;
+          }
+
           if (data.status === 'PAID') {
               setSuccessMsg('Pagamento confirmado! Atualizando...');
               setTimeout(() => {
-                  window.location.reload(); // Atualiza a página para mostrar o saldo
+                  window.location.reload();
               }, 2000);
           } else {
-              setError('Pagamento ainda não identificado. Aguarde uns segundos.');
+              setError(`Status atual: ${data.message || 'Pendente'}. Aguarde mais um pouco.`);
           }
-      } catch (e) {
-          setError('Erro ao verificar.');
+      } catch (e: any) {
+          alert("ERRO NO SITE: " + e.message);
       } finally {
           setLoading(false);
       }
@@ -117,7 +126,7 @@ export default function DepositModal({ isOpen, onClose, userId, userEmail }: Dep
                         <button onClick={handleCheckPayment} disabled={loading} className="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-3 rounded-xl mb-3 flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all">
                             {loading ? <Loader2 className="animate-spin" /> : <><RefreshCw size={18} /> JÁ PAGUEI / ATUALIZAR</>}
                         </button>
-                        {error && <p className="text-red-400 text-xs font-bold mb-2">{error}</p>}
+                        {error && <p className="text-red-400 text-xs font-bold mb-2 text-center">{error}</p>}
                     </>
                 )}
 
