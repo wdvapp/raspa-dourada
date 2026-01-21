@@ -5,13 +5,12 @@ import ScratchCard from '../components/ScratchCard';
 import DepositModal from '../components/DepositModal';
 import { AuthModal } from '../components/AuthModal'; 
 import ProfileSidebar from '../components/ProfileSidebar';
-import CarnivalWheel, { WHEEL_PRIZES } from '../components/CarnivalWheel';
 import confetti from 'canvas-confetti';
 import { db, app } from '../lib/firebase';
 import { doc, getDoc, collection, getDocs, onSnapshot, updateDoc, increment } from 'firebase/firestore'; 
 import { getAuth, onAuthStateChanged, signOut } from 'firebase/auth';
 import {
-  User, Trophy, ChevronLeft, Home as HomeIcon, Grid, PlusCircle, Bell, Zap, Star, XCircle, RotateCw, Gift, ChevronRight, Play, LogOut, Loader2, Dices, Sparkles, Music
+  User, Trophy, ChevronLeft, Home as HomeIcon, Grid, PlusCircle, Bell, Zap, Star, XCircle, RotateCw, Gift, ChevronRight, Play
 } from 'lucide-react';
 
 interface Prize { name: string; value: number; chance: number; image?: string; }
@@ -21,18 +20,13 @@ export default function Home() {
   // --- ESTADOS GERAIS ---
   const [user, setUser] = useState<any>(null);
   const [balance, setBalance] = useState(0); 
-  const [view, setView] = useState<'LOBBY' | 'GAME' | 'ROULETTE'>('LOBBY');
+  const [view, setView] = useState<'LOBBY' | 'GAME'>('LOBBY'); // Removido ROULETTE
   const [gamesList, setGamesList] = useState<Game[]>([]);
   const [activeGame, setActiveGame] = useState<any>(null);
   const [prizesGrid, setPrizesGrid] = useState<Prize[]>([]); 
   const [loading, setLoading] = useState(false);
   const [gameId, setGameId] = useState(0);
   
-  // --- ESTADOS DA ROLETA ---
-  const [wheelAngle, setWheelAngle] = useState(0);
-  const [isSpinning, setIsSpinning] = useState(false);
-  const [hasFreeSpin, setHasFreeSpin] = useState(true);
-
   // --- MODAIS ---
   const [isDepositOpen, setIsDepositOpen] = useState(false);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
@@ -48,20 +42,11 @@ export default function Home() {
   const [winningIndices, setWinningIndices] = useState<number[]>([]);
   const [winAmount, setWinAmount] = useState<string>('');
   
-  // --- ÁUDIOS ---
   const winAudioRef = useRef<HTMLAudioElement | null>(null);
-  const spinAudioRef = useRef<HTMLAudioElement | null>(null); // Som roleta
-  const stopAudioRef = useRef<HTMLAudioElement | null>(null); // Som parada
 
   // --- EFEITO INICIAL ---
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-        winAudioRef.current = new Audio('/win.mp3');
-        // Carregando os sons da roleta
-        spinAudioRef.current = new Audio('/roulette_spin.mp3');
-        stopAudioRef.current = new Audio('/roulette_stop.mp3');
-    }
-    
+    if (typeof window !== 'undefined') winAudioRef.current = new Audio('/win.mp3');
     const auth = getAuth(app);
     let unsubscribeSnapshot: any = null;
 
@@ -109,51 +94,6 @@ export default function Home() {
   const handleLogout = () => { const auth = getAuth(app); signOut(auth); setIsProfileOpen(false); };
   
   const handleBackToLobby = () => { setShowPopup(false); setIsGameFinished(false); setActiveGame(null); setView('LOBBY'); };
-
-  // --- LÓGICA DA ROLETA (COM SOM) ---
-  const handleSpinClick = () => {
-    if (isSpinning || !user) { if (!user) setIsAuthOpen(true); return; }
-    
-    if (!hasFreeSpin) {
-        if (balance < 1) { setIsDepositOpen(true); return; }
-        setBalance(prev => prev - 1); 
-    } else {
-        setHasFreeSpin(false);
-    }
-
-    setIsSpinning(true);
-    
-    // Tocar som de giro (Loop)
-    if (spinAudioRef.current) {
-        spinAudioRef.current.currentTime = 0;
-        spinAudioRef.current.loop = true;
-        spinAudioRef.current.play().catch(() => {});
-    }
-
-    const prizeIndex = Math.floor(Math.random() * WHEEL_PRIZES.length);
-    const segmentAngle = 360 / WHEEL_PRIZES.length;
-    // 5 voltas (1800 graus) + ângulo do prêmio
-    const finalAngle = wheelAngle + 1800 + (prizeIndex * segmentAngle) + (segmentAngle / 2);
-    setWheelAngle(finalAngle);
-
-    setTimeout(() => { 
-        setIsSpinning(false);
-        
-        // Parar som de giro e tocar som de parada
-        if (spinAudioRef.current) {
-            spinAudioRef.current.pause();
-            spinAudioRef.current.currentTime = 0;
-        }
-        if (stopAudioRef.current) {
-            stopAudioRef.current.play().catch(() => {});
-        }
-
-        // Se for dinheiro, toca confete
-        if (WHEEL_PRIZES[prizeIndex].type === 'money') {
-             triggerWin();
-        }
-    }, 5000);
-  };
 
   // --- LÓGICA DA RASPADINHA ---
   const playRound = async () => {
@@ -276,7 +216,7 @@ export default function Home() {
 
         {/* --- CONTEÚDO PRINCIPAL MOBILE --- */}
         {view === 'GAME' && activeGame ? (
-           /* --- VIEW: RASPADINHA (SEU CÓDIGO ORIGINAL) --- */
+           /* --- VIEW: RASPADINHA --- */
           <main className="flex flex-col items-center px-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
             <div className="w-full max-w-sm flex justify-between items-end mb-4">
               <div><h1 className="text-2xl font-black italic text-white tracking-tight uppercase">{activeGame.name}</h1><p className="text-zinc-500 text-xs font-medium">Encontre 3 símbolos iguais</p></div>
@@ -324,37 +264,8 @@ export default function Home() {
               </div>
             </div>
           </main>
-        ) : view === 'ROULETTE' ? (
-           /* --- VIEW: ROLETA DE CARNAVAL (ADICIONADA COM SOM E VISUAL) --- */
-           <main className="flex flex-col items-center px-4 py-6 animate-in fade-in zoom-in duration-500 overflow-hidden relative min-h-[80vh] justify-center">
-             {/* Fundo Temático */}
-             <div className="absolute inset-0 bg-[url('https://img.freepik.com/free-vector/realistic-brazilian-carnival-background_23-2149277239.jpg')] bg-cover bg-center opacity-30 z-0 pointer-events-none mix-blend-overlay"></div>
-             
-             <div className="relative z-10 text-center mb-6">
-                <h1 className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-[#FFD700] via-[#FF4500] to-[#9400D3] uppercase tracking-tighter italic drop-shadow-md flex items-center justify-center gap-2">
-                    <Sparkles className="text-[#FFD700]" size={32} /> Roleta da Folia
-                </h1>
-                <p className="text-[#FFD700] text-sm font-bold uppercase tracking-widest mt-2">Prêmios Diários!</p>
-             </div>
-
-             <CarnivalWheel 
-                isSpinning={isSpinning}
-                rotationAngle={wheelAngle}
-                onSpinClick={handleSpinClick}
-                hasFreeSpin={hasFreeSpin}
-             />
-
-             <div className="bg-zinc-900/80 backdrop-blur-md p-4 rounded-full border-2 border-[#FFD700]/50 text-center max-w-xs relative z-10 mt-8 shadow-[0_0_20px_rgba(255,215,0,0.3)]">
-                 <p className="text-white text-sm leading-relaxed font-medium">
-                     {hasFreeSpin ? 
-                        <>Você tem <span className="font-black text-[#FFD700] text-lg">1 Giro Grátis</span> hoje!</> : 
-                        <>Gire por apenas <span className="font-black text-[#FFD700] text-lg">R$ 1,00</span> e tente a sorte.</>
-                     }
-                 </p>
-             </div>
-           </main>
         ) : (
-          /* --- VIEW: LOBBY (SEU CÓDIGO ORIGINAL) --- */
+          /* --- VIEW: LOBBY (ORIGINAL) --- */
           <main className="px-4 pb-8">
             <div className="w-full rounded-2xl relative overflow-hidden shadow-lg border border-zinc-800 mb-8 group bg-zinc-900">
               {layoutConfig.banner ? <img src={layoutConfig.banner} alt="Banner" className="w-full h-auto object-contain block" /> : <div className="h-52 relative overflow-hidden flex items-center justify-center bg-zinc-800"><span className="text-zinc-600 font-bold">Sem Banner</span></div>}
@@ -391,23 +302,21 @@ export default function Home() {
           </main>
         )}
 
-        {/* MENU INFERIOR MOBILE */}
+        {/* MENU INFERIOR MOBILE (LIMPO) */}
         <div className="fixed bottom-0 w-full bg-zinc-950/95 backdrop-blur-md border-t border-zinc-800 pb-6 pt-2 px-6 flex justify-between items-center z-50 h-20 shadow-2xl">
           <button onClick={handleBackToLobby} className={`flex flex-col items-center gap-1 ${view === 'LOBBY' ? '' : 'text-zinc-500'}`} style={view === 'LOBBY' ? { color: layoutConfig.color } : {}}><HomeIcon size={24} strokeWidth={view === 'LOBBY' ? 3 : 2} /><span className="text-[10px] font-medium">Início</span></button>
           
-          {/* BOTÃO ROLETA DESTACADO */}
-          <button onClick={() => setView('ROULETTE')} className={`flex flex-col items-center gap-1 ${view === 'ROULETTE' ? 'text-[#FFD700]' : 'text-zinc-500'}`}>
-              <Dices size={24} strokeWidth={view === 'ROULETTE' ? 3 : 2} className={view === 'ROULETTE' ? 'animate-pulse fill-[#FFD700]/20' : ''} />
-              <span className="text-[10px] font-medium">Roleta</span>
-          </button>
+          {/* Botão Jogar/Menu */}
+          <button onClick={() => !user ? setIsAuthOpen(true) : null} className={`flex flex-col items-center gap-1 ${view === 'GAME' ? '' : 'text-zinc-500'}`} style={view === 'GAME' ? { color: layoutConfig.color } : {}}><Grid size={24} strokeWidth={view === 'GAME' ? 3 : 2} /><span className="text-[10px] font-medium">Jogar</span></button>
           
           <div className="relative -top-6"><button onClick={handleOpenDeposit} className="text-black p-4 rounded-full transition-transform active:scale-95 border-4 border-zinc-950" style={{ backgroundColor: layoutConfig.color, boxShadow: `0 0 20px ${layoutConfig.color}66` }}><PlusCircle size={32} strokeWidth={2.5} /></button></div>
+          
           <button className="flex flex-col items-center gap-1 text-zinc-500"><Trophy size={24} /><span className="text-[10px] font-medium">Ganhadores</span></button>
           <button onClick={() => user ? setIsProfileOpen(true) : setIsAuthOpen(true)} className={`flex flex-col items-center gap-1 ${isProfileOpen ? 'text-white' : 'text-zinc-500'}`}><User size={24} /><span className="text-[10px] font-medium">Perfil</span></button>
         </div>
       </div>
 
-      {/* ======================== LAYOUT DESKTOP (SEU CÓDIGO ORIGINAL) ======================== */}
+      {/* ======================== LAYOUT DESKTOP ======================== */}
       <div className="hidden md:flex flex-col min-h-screen bg-[#09090b] text-white font-sans selection:bg-yellow-500/30">
         <header className="fixed top-0 w-full z-50 bg-zinc-950/95 backdrop-blur-md border-b border-white/5 h-20 flex items-center px-12 justify-between">
             <div className="flex items-center gap-10">
@@ -425,8 +334,7 @@ export default function Home() {
                 </div>
                 <nav className="flex items-center gap-8">
                     <a href="#" className="text-sm font-bold text-white hover:text-yellow-500 transition-colors uppercase tracking-wide">Início</a>
-                    {/* Link Roleta Desktop */}
-                    <button onClick={() => alert("A roleta está otimizada para Mobile! Acesse pelo celular para a melhor experiência.")} className="text-sm font-bold text-zinc-400 hover:text-white transition-colors uppercase tracking-wide flex items-center gap-1"><Dices size={16}/> Roleta</button>
+                    <a href="#" className="text-sm font-bold text-zinc-400 hover:text-white transition-colors uppercase tracking-wide">Raspadinhas</a>
                     <a href="#" className="text-sm font-bold text-zinc-400 hover:text-white transition-colors uppercase tracking-wide">Promoções</a>
                 </nav>
             </div>
@@ -585,10 +493,32 @@ export default function Home() {
         </div>
       )}
 
-      {/* MODAIS GERAIS */}
-      <AuthModal isOpen={isAuthOpen} onClose={() => setIsAuthOpen(false)} onLoginSuccess={(u) => { setUser(u); setIsDepositOpen(true); }} />
-      <DepositModal isOpen={isDepositOpen} onClose={() => setIsDepositOpen(false)} userId={user?.uid} userEmail={user?.email} />
-      <ProfileSidebar isOpen={isProfileOpen} onClose={() => setIsProfileOpen(false)} user={user} balance={balance} onLogout={handleLogout} />
+      {/* MODAL DE LOGIN */}
+      <AuthModal 
+        isOpen={isAuthOpen} 
+        onClose={() => setIsAuthOpen(false)} 
+        onLoginSuccess={(u) => {
+            setUser(u);
+            setIsDepositOpen(true); // Abre o depósito logo após logar
+        }} 
+      />
+
+      {/* MODAL DE DEPÓSITO */}
+      <DepositModal 
+        isOpen={isDepositOpen} 
+        onClose={() => setIsDepositOpen(false)} 
+        userId={user?.uid} 
+        userEmail={user?.email} 
+      />
+
+      {/* SIDEBAR DE PERFIL (SAQUE FICA AQUI DENTRO) */}
+      <ProfileSidebar 
+        isOpen={isProfileOpen} 
+        onClose={() => setIsProfileOpen(false)} 
+        user={user}
+        balance={balance}
+        onLogout={handleLogout}
+      />
     </>
   );
 }
