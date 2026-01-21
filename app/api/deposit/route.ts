@@ -17,11 +17,16 @@ function gerarCpfFalso() {
 
 export async function POST(req: Request) {
   try {
-    console.log("--- INICIANDO DEPÓSITO (CORREÇÃO PAYER) ---");
+    console.log("--- INICIANDO DEPÓSITO COM WEBHOOK DINÂMICO ---");
 
     const PIXUP_URL = process.env.PIXUP_API_URL;
     const CLIENT_ID = process.env.PIXUP_CLIENT_ID;
     const CLIENT_SECRET = process.env.PIXUP_CLIENT_SECRET;
+
+    // IMPORTANTE: Troque pelo seu domínio REAL que está na Vercel
+    // Não funciona com localhost!
+    const SEU_SITE = 'https://raspadourada.com'; 
+    const WEBHOOK_URL = `${SEU_SITE}/api/webhook`;
 
     if (!PIXUP_URL || !CLIENT_ID || !CLIENT_SECRET) {
         return NextResponse.json({ error: 'Faltam chaves no .env.local' }, { status: 500 });
@@ -47,11 +52,8 @@ export async function POST(req: Request) {
         throw new Error(`Falha Auth Pixup: ${JSON.stringify(authData)}`);
     }
 
-    // 2. GERAR QR CODE (Agora com o campo PAYER obrigatório!)
+    // 2. GERAR QR CODE (Enviando o callbackUrl)
     const external_id = `raspa_${Date.now()}`;
-    
-    // ATENÇÃO: Estou usando um CPF gerado para passar na validação.
-    // No futuro, você deve pedir o CPF real do usuário no cadastro.
     const cpfPagador = gerarCpfFalso(); 
 
     const qrResponse = await fetch(`${PIXUP_URL}/v2/pix/qrcode`, {
@@ -64,6 +66,7 @@ export async function POST(req: Request) {
             amount: parseFloat(amount),
             external_id: external_id,
             payerQuestion: "Creditos Raspa Dourada",
+            callbackUrl: WEBHOOK_URL, // <--- AQUI ESTÁ O SEGREDO!
             payer: {
                 name: "Cliente Raspa Dourada",
                 document: cpfPagador
@@ -78,7 +81,7 @@ export async function POST(req: Request) {
         throw new Error(`Erro Pixup: ${JSON.stringify(qrData)}`);
     }
 
-    // 3. TENTA SALVAR NO FIREBASE (Se falhar, não trava o Pix)
+    // 3. TENTA SALVAR NO FIREBASE
     try {
         await addDoc(collection(db, 'deposits'), {
             txid: qrData.transactionId,
@@ -92,7 +95,7 @@ export async function POST(req: Request) {
             pixCopiaECola: qrData.qrcode
         });
     } catch (e) {
-        console.error("Aviso: Pix gerado mas não salvo no banco (verifique permissões do Firebase)", e);
+        console.error("Aviso: Pix gerado mas não salvo no banco", e);
     }
 
     const qrCodeImage = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(qrData.qrcode)}`;
