@@ -1,21 +1,20 @@
 'use client';
 
 import React from 'react';
-import { Theater, Coins, Ticket, XCircle, PartyPopper, Music, Star } from 'lucide-react';
+import { Theater, Music } from 'lucide-react';
 
-// --- 1. LISTA DE PRÊMIOS (O page.tsx precisa disso exportado) ---
+// --- LISTA DE PRÊMIOS (Mantida apenas para a lógica matemática da Home funcionar) ---
+// Importante: A ordem desses prêmios deve bater com a ordem da sua imagem (sentido horário)
 export const WHEEL_PRIZES = [
-  { label: 'R$ 5', value: 5, type: 'money', color: '#00C851', textColor: 'white', icon: <Coins size={24} /> }, // Verde
-  { label: '10 Giros', value: 10, type: 'scratch', color: '#ff4444', textColor: 'white', icon: <Ticket size={24} /> }, // Vermelho
-  { label: 'Não foi', value: 0, type: 'loss', color: '#33b5e5', textColor: 'white', icon: <XCircle size={24} /> }, // Azul
-  { label: 'R$ 2', value: 2, type: 'money', color: '#FFD700', textColor: 'black', icon: <Coins size={24} /> }, // Dourado
-  { label: 'Bônus', value: 0, type: 'bonus', color: '#aa66cc', textColor: 'white', icon: <PartyPopper size={24} /> }, // Roxo
-  { label: '5 Giros', value: 5, type: 'scratch', color: '#FF8800', textColor: 'white', icon: <Ticket size={24} /> }, // Laranja
-  { label: 'Tente+', value: 0, type: 'loss', color: '#2BBBAD', textColor: 'white', icon: <Theater size={24} /> }, // Turquesa
-  { label: 'R$ 1', value: 1, type: 'money', color: '#ffbb33', textColor: 'black', icon: <Coins size={24} /> }, // Amarelo
+  { label: 'Prêmio 1', value: 10, type: 'scratch' },
+  { label: 'Prêmio 2', value: 2, type: 'money' },
+  { label: 'Prêmio 3', value: 5, type: 'scratch' },
+  { label: 'Prêmio 4', value: 0, type: 'loss' },
+  { label: 'Prêmio 5', value: 2, type: 'money' },
+  { label: 'Prêmio 6', value: 5, type: 'scratch' },
+  { label: 'Prêmio 7', value: 10, type: 'scratch' },
+  { label: 'Prêmio 8', value: 0, type: 'loss' },
 ];
-
-const SEGMENT_ANGLE = 360 / WHEEL_PRIZES.length;
 
 interface CarnivalWheelProps {
   isSpinning: boolean;
@@ -26,70 +25,38 @@ interface CarnivalWheelProps {
 
 export default function CarnivalWheel({ isSpinning, rotationAngle, onSpinClick, hasFreeSpin }: CarnivalWheelProps) {
   return (
-    <div className="relative w-[320px] h-[320px] md:w-[400px] md:h-[400px] mx-auto my-6 group">
+    <div className="relative w-[340px] h-[340px] md:w-[420px] md:h-[420px] mx-auto my-6 group">
       
-      {/* 1. Brilho de Fundo (Carnaval) */}
-      <div className="absolute inset-[-15px] rounded-full animate-pulse blur-xl z-0"
-        style={{ background: 'conic-gradient(from 0deg, #FFD700, #ff4444, #aa66cc, #00C851, #FFD700)' }}
+      {/* 1. Efeito de Fundo (Brilho atrás da imagem) */}
+      <div className="absolute inset-[-20px] rounded-full animate-pulse blur-xl z-0"
+        style={{ background: 'radial-gradient(circle, #FFD700 0%, transparent 70%)' }}
       ></div>
 
       {/* 2. Seta Indicadora (Topo) */}
-      <div className="absolute -top-6 left-1/2 -translate-x-1/2 z-30 drop-shadow-lg">
-        {/* Triângulo invertido Dourado */}
-        <div className="w-0 h-0 border-l-[20px] border-l-transparent border-r-[20px] border-r-transparent border-t-[30px] border-t-[#FFD700]"></div>
+      <div className="absolute -top-8 left-1/2 -translate-x-1/2 z-30 drop-shadow-lg">
+        <Theater size={54} fill="#FFD700" stroke="#FFF" strokeWidth={2} />
       </div>
 
-      {/* 3. A Roleta Giratória (Desenhada via Código) */}
+      {/* 3. A IMAGEM DA ROLETA (Girando) */}
       <div
-        className="w-full h-full rounded-full relative overflow-hidden z-10 shadow-2xl transition-transform duration-[5000ms] cubic-bezier(0.15, 0, 0.15, 1) border-4 border-[#FFD700]"
+        className="w-full h-full rounded-full relative z-10 shadow-2xl transition-transform duration-[5000ms] cubic-bezier(0.15, 0, 0.15, 1)"
         style={{
           transform: `rotate(${rotationAngle}deg)`,
-          background: '#333' // Fundo de segurança
+          // Aqui puxamos a sua imagem da pasta public
+          backgroundImage: 'url(/roulette_wheel.png)', 
+          backgroundSize: 'contain',
+          backgroundRepeat: 'no-repeat',
+          backgroundPosition: 'center'
         }}
       >
-        {/* Renderiza as Fatias Coloridas Automaticamente */}
-        {WHEEL_PRIZES.map((prize, index) => {
-          const rotation = index * SEGMENT_ANGLE;
-          return (
-            <div
-              key={index}
-              className="absolute top-0 left-1/2 w-1/2 h-1/2 origin-bottom-left"
-              style={{
-                transform: `rotate(${rotation}deg) skewY(-${90 - SEGMENT_ANGLE}deg)`,
-                background: prize.color, // Cor vinda da lista
-                borderRight: '2px solid rgba(255,255,255,0.2)' // Divisória sutil
-              }}
-            >
-              {/* Conteúdo da Fatia (Texto e Ícone) - Centralizado */}
-              <div 
-                className="absolute flex flex-col items-center justify-center text-center w-full h-full"
-                style={{ 
-                    // Ajuste fino para centralizar o texto na parte mais larga da fatia
-                    transform: `skewY(${90 - SEGMENT_ANGLE}deg) rotate(${SEGMENT_ANGLE / 2}deg) translate(35px, 45px)`, 
-                }}
-              >
-                {/* Ícone girado para ficar em pé */}
-                <div style={{ color: prize.textColor, transform: 'rotate(-90deg)' }} className="mb-1 drop-shadow-md">
-                    {prize.icon}
-                </div>
-                {/* Texto girado */}
-                <span 
-                    className="font-black text-[11px] uppercase whitespace-nowrap drop-shadow-sm leading-none"
-                    style={{ color: prize.textColor, transform: 'rotate(-90deg)' }}
-                >
-                  {prize.label}
-                </span>
-              </div>
-            </div>
-          );
-        })}
+        {/* A div fica vazia pois a imagem de fundo faz todo o trabalho visual */}
       </div>
 
       {/* 4. Botão Central (Fixo) */}
       <button
         onClick={!isSpinning ? onSpinClick : undefined}
         disabled={isSpinning}
-        className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-24 h-24 rounded-full z-30 flex flex-col items-center justify-center shadow-[0_0_15px_rgba(0,0,0,0.5)] border-[4px] border-white active:scale-95 transition-transform"
+        className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-28 h-28 rounded-full z-30 flex flex-col items-center justify-center shadow-[0_0_20px_rgba(0,0,0,0.6)] border-[4px] border-[#FFD700] active:scale-95 transition-transform"
         style={{ background: 'linear-gradient(135deg, #FFD700 0%, #FF8C00 100%)' }}
       >
         <div className="absolute inset-0 bg-white/20 rounded-full animate-pulse"></div>
@@ -99,7 +66,7 @@ export default function CarnivalWheel({ isSpinning, rotationAngle, onSpinClick, 
         ) : (
           <div className="relative z-10 text-center">
             <span className="block text-white font-black text-xl uppercase drop-shadow-md leading-none">GIRAR</span>
-            <span className="block text-white text-[9px] font-bold uppercase mt-1 bg-black/20 px-2 py-0.5 rounded-full">
+            <span className="block text-white text-[10px] font-bold uppercase mt-1 bg-black/20 px-2 py-0.5 rounded-full">
                {hasFreeSpin ? 'Grátis' : 'R$ 1,00'}
             </span>
           </div>
