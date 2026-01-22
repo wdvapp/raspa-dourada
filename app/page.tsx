@@ -6,6 +6,7 @@ import DepositModal from '../components/DepositModal';
 import { AuthModal } from '../components/AuthModal'; 
 import ProfileSidebar from '../components/ProfileSidebar';
 import PrizePreviewModal from '../components/PrizePreviewModal';
+import WinnersCarousel from '../components/WinnersCarousel'; // <--- IMPORT
 import confetti from 'canvas-confetti';
 import { db, app } from '../lib/firebase';
 import { doc, getDoc, collection, getDocs, onSnapshot, updateDoc, increment } from 'firebase/firestore'; 
@@ -28,12 +29,14 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [gameId, setGameId] = useState(0);
   
+  // --- NOVO: LISTA DE GANHADORES DO BANCO ---
+  const [winnerImages, setWinnerImages] = useState<string[]>([]);
+
   // --- MODAIS ---
   const [isDepositOpen, setIsDepositOpen] = useState(false);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   
-  // --- NOVO ESTADO PARA O MODAL DE PRÊMIOS ---
   const [previewGame, setPreviewGame] = useState<Game | null>(null);
 
   const [layoutConfig, setLayoutConfig] = useState<any>({
@@ -56,12 +59,28 @@ export default function Home() {
 
     const initData = async () => {
         try {
+            // Carrega Config e Jogos
             const docRef = doc(db, 'config', 'layout');
             const docSnap = await getDoc(docRef);
             if (docSnap.exists()) setLayoutConfig(docSnap.data());
+            
             const querySnapshot = await getDocs(collection(db, 'games'));
             const list = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Game[];
             setGamesList(list);
+
+            // --- NOVO: Carrega as fotos dos ganhadores ---
+            const winnersSnap = await getDocs(collection(db, 'winners'));
+            // Mapeia apenas as imagens (campo 'image') e se houver banner principal, bota ele no começo
+            const winnersList = winnersSnap.docs.map(doc => doc.data().image);
+            
+            // Se tiver banner principal na config, adiciona ele como primeiro item
+            // Mas só adiciona se tiver ganhadores. Se não tiver ganhadores, só mostra o banner.
+            if (docSnap.exists() && docSnap.data().banner) {
+                setWinnerImages([docSnap.data().banner, ...winnersList]);
+            } else {
+                setWinnerImages(winnersList);
+            }
+
         } catch (error) { console.error("Erro carregamento inicial", error); }
     };
     initData();
@@ -99,7 +118,7 @@ export default function Home() {
   
   const handleBackToLobby = () => { setShowPopup(false); setIsGameFinished(false); setActiveGame(null); setView('LOBBY'); };
 
-  // --- LÓGICA DA RASPADINHA (REFINADA) ---
+  // --- LÓGICA DA RASPADINHA ---
   const playRound = async () => {
     if (!activeGame) return;
     if (balance < activeGame.price) { setIsDepositOpen(true); return; }
@@ -111,12 +130,10 @@ export default function Home() {
     if (winAudioRef.current) { winAudioRef.current.pause(); winAudioRef.current.currentTime = 0; }
     await new Promise(resolve => setTimeout(resolve, 500));
 
-    // 1. SORTEIO DO VENCEDOR (OU NÃO)
     let winningPrize: Prize | null = null;
     const random = Math.random() * 100;
     let cumulativeChance = 0;
     
-    // Calcula se ganhou algo
     for (const prize of activeGame.prizes) {
         cumulativeChance += (Number(prize.chance) || 0);
         if (random <= cumulativeChance) { winningPrize = prize; break; }
@@ -125,64 +142,33 @@ export default function Home() {
     let finalGrid: Prize[] = [];
     const loserPlaceholder: Prize = { name: 'Tente+', value: 0, chance: 0, image: '' };
     
-    // Lista de prêmios disponíveis para usar como "isca" (Decoys)
-    // Se tiver poucos prêmios, duplicamos a lista para ter variedade
-    let availablePrizes = [...activeGame.prizes];
-    if (availablePrizes.length < 5) availablePrizes = [...availablePrizes, ...availablePrizes];
-
     if (winningPrize) {
-        // --- CENÁRIO: VITÓRIA ---
-        // Coloca 3 prêmios vencedores
         finalGrid.push(winningPrize, winningPrize, winningPrize);
-        
-        // Preenche o resto (6 espaços) com outros prêmios aleatórios
-        // Garantindo que nenhum outro apareça 3 vezes para não confundir
         const otherOptions = activeGame.prizes.filter((p: Prize) => p.name !== winningPrize?.name);
-        
         for (let i = 0; i < 6; i++) {
             let selectedFiller = loserPlaceholder;
-            
             if (otherOptions.length > 0) {
-                // Tenta pegar um prêmio aleatório
                 const candidate = otherOptions[Math.floor(Math.random() * otherOptions.length)];
-                // Verifica quantas vezes ele já está no grid
                 const count = finalGrid.filter(p => p.name === candidate.name).length;
-                
-                // Só adiciona se tiver menos de 2 (para não criar outro vencedor acidental)
-                if (count < 2) {
-                    selectedFiller = candidate;
-                }
+                if (count < 2) selectedFiller = candidate;
             }
-            // Se não conseguiu achar um válido (raro), usa o placeholder, mas tenta evitar
             finalGrid.push(selectedFiller);
         }
-
     } else {
-        // --- CENÁRIO: DERROTA (O ajuste principal é aqui) ---
-        // Objetivo: Preencher 9 espaços com símbolos reais, SEM repetir 3 iguais.
-        
         const counts: Record<string, number> = {};
-        
         for (let i = 0; i < 9; i++) {
-            // Filtra prêmios que ainda não apareceram 2 vezes
             const candidates = activeGame.prizes.filter((p: Prize) => (counts[p.name] || 0) < 2);
-            
             if (candidates.length > 0) {
-                // Escolhe um candidato válido
                 const randomPrize = candidates[Math.floor(Math.random() * candidates.length)];
                 finalGrid.push(randomPrize);
                 counts[randomPrize.name] = (counts[randomPrize.name] || 0) + 1;
             } else {
-                // Caso extremo: Se acabarem as opções (ex: só tem 2 prêmios cadastrados no jogo todo)
-                // Aí somos obrigados a colocar o placeholder
                 finalGrid.push(loserPlaceholder);
             }
         }
     }
 
-    // Embaralha tudo para o prêmio não ficar sempre no começo
     finalGrid = finalGrid.sort(() => Math.random() - 0.5);
-    
     setPrizesGrid(finalGrid); setLoading(false); setGameId(prev => prev + 1);
   };
 
@@ -281,7 +267,6 @@ export default function Home() {
                             {prize.image ? (
                                 <img src={prize.image} alt={prize.name} className="w-[80%] h-[80%] object-contain drop-shadow-sm" />
                             ) : (
-                                /* FALLBACK: Se não tiver imagem, verifica se é placeholder */
                                 prize.name === 'Tente+' ? <Frown className="text-zinc-300" size={32} /> : <span className={`font-black text-center leading-tight select-none p-1 ${winningIndices.includes(index) ? 'text-black text-xs' : 'text-zinc-900 text-[10px]'}`}>{prize.name}</span>
                             )}
                           </div>
@@ -314,9 +299,13 @@ export default function Home() {
         ) : (
           /* --- VIEW: LOBBY (ORIGINAL) --- */
           <main className="px-4 pb-8">
-            <div className="w-full rounded-2xl relative overflow-hidden shadow-lg border border-zinc-800 mb-8 group bg-zinc-900">
-              {layoutConfig.banner ? <img src={layoutConfig.banner} alt="Banner" className="w-full h-auto object-contain block" /> : <div className="h-52 relative overflow-hidden flex items-center justify-center bg-zinc-800"><span className="text-zinc-600 font-bold">Sem Banner</span></div>}
+            
+            {/* --- MURAL DE GANHADORES (Substitui o Banner Antigo) --- */}
+            <div className="w-full h-40 md:h-52 rounded-2xl relative overflow-hidden shadow-lg border border-zinc-800 mb-8 bg-zinc-900">
+               {/* Passa as imagens carregadas do banco para o Carrossel */}
+               <WinnersCarousel images={winnerImages} />
             </div>
+
             <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2"><Grid size={18} style={{ color: layoutConfig.color }} /> Destaques</h3>
             <div className="flex flex-col gap-5">
               {gamesList.length > 0 ? (
@@ -479,21 +468,13 @@ export default function Home() {
                 </div>
             ) : (
                 <div className="max-w-7xl mx-auto px-8">
+                    
+                    {/* --- MURAL DE GANHADORES (Desktop) --- */}
                     <div className="w-full h-[400px] rounded-[2rem] relative overflow-hidden shadow-2xl border border-zinc-800 mb-12 group">
-                        {layoutConfig.banner ? (
-                            <img src={layoutConfig.banner} alt="Banner" className="w-full h-full object-cover transition-transform duration-700 hover:scale-105" />
-                        ) : (
-                            <div className="w-full h-full bg-zinc-800 flex items-center justify-center text-zinc-600 font-bold text-2xl">Banner Principal</div>
-                        )}
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-transparent to-transparent flex items-end p-12 pointer-events-none">
-                             <div className="pointer-events-auto">
-                                <h2 className="text-6xl font-black text-white mb-4 drop-shadow-lg">RASPE E GANHE</h2>
-                                <button onClick={() => !user && setIsAuthOpen(true)} className="bg-white hover:bg-zinc-200 text-black px-10 py-4 rounded-full font-black text-sm shadow-xl transition-transform hover:scale-105 flex items-center gap-2">
-                                    <Play size={20} fill="black" /> COMEÇAR AGORA
-                                </button>
-                             </div>
-                        </div>
+                        {/* Passa as imagens carregadas do banco para o Carrossel */}
+                        <WinnersCarousel images={winnerImages} />
                     </div>
+
                     <h3 className="text-3xl font-black text-white mb-8 flex items-center gap-3">
                         <Grid className="text-yellow-500" size={32} /> Jogos em Destaque
                     </h3>
