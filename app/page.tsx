@@ -5,7 +5,7 @@ import ScratchCard from '../components/ScratchCard';
 import DepositModal from '../components/DepositModal';
 import { AuthModal } from '../components/AuthModal'; 
 import ProfileSidebar from '../components/ProfileSidebar';
-import PrizePreviewModal from '../components/PrizePreviewModal'; // <--- IMPORT NOVO
+import PrizePreviewModal from '../components/PrizePreviewModal';
 import confetti from 'canvas-confetti';
 import { db, app } from '../lib/firebase';
 import { doc, getDoc, collection, getDocs, onSnapshot, updateDoc, increment } from 'firebase/firestore'; 
@@ -392,7 +392,8 @@ export default function Home() {
                                         <span className="mt-4 text-sm font-bold uppercase tracking-widest text-zinc-500">Carregando...</span>
                                     </div>
                                 ) : (
-                                    <div className="absolute inset-0 m-6 rounded-xl overflow-hidden z-20 shadow-lg">
+                                    /* --- AQUI ESTÁ A CORREÇÃO DE TAMANHO (CSS) --- */
+                                    <div className="absolute inset-0 m-6 rounded-xl overflow-hidden z-20 shadow-lg [&_canvas]:w-full [&_canvas]:h-full [&_img]:w-full [&_img]:h-full">
                                         <ScratchCard key={gameId} isRevealed={isGameFinished} onReveal={handleGameFinish} coverImage={layoutConfig.scratchCover} />
                                     </div>
                                 )}
@@ -423,6 +424,8 @@ export default function Home() {
                             <div className="grid grid-cols-3 gap-3">
                                 {activeGame.prizes && activeGame.prizes.map((p: any, i: number) => (
                                     <div key={i} className="bg-black/30 p-3 rounded-xl border border-white/5 flex flex-col items-center justify-center hover:bg-white/5 transition-colors">
+                                        {/* CORREÇÃO: IMAGEM NO DESKTOP */}
+                                        {p.image ? <img src={p.image} className="w-8 h-8 object-contain mb-2" /> : <Trophy size={20} className="mb-2 text-zinc-600" />}
                                         <span className="text-[10px] text-zinc-400 font-bold mb-1">{p.name}</span>
                                         <span className="text-sm font-black text-yellow-500">R$ {p.value}</span>
                                     </div>
