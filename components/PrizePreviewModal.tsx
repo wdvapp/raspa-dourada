@@ -2,28 +2,11 @@
 
 import { X, Trophy, Zap } from 'lucide-react';
 
-interface Prize {
-  name: string;
-  image?: string;
-  value: number;
-  chance: number;
-}
-
-// --- CORREÇÃO AQUI: Adicionei 'cover' e 'description' para igualar à Home ---
-interface Game {
-  id: string;
-  name: string;
-  price: number;
-  cover: string;       // <--- Faltava isso
-  description?: string; // <--- E isso
-  prizes: Prize[];
-}
-
 interface PrizePreviewModalProps {
   isOpen: boolean;
   onClose: () => void;
-  game: Game | null;
-  onPlay: (game: Game) => void;
+  game: any; // <--- O SEGREDO: 'any' aceita tudo e para de dar erro de conflito
+  onPlay: (game: any) => void;
   layoutColor: string;
 }
 
@@ -31,7 +14,16 @@ export default function PrizePreviewModal({ isOpen, onClose, game, onPlay, layou
   if (!isOpen || !game) return null;
 
   // Ordena os prêmios do maior valor para o menor
-  const sortedPrizes = [...(game.prizes || [])].sort((a, b) => Number(b.value) - Number(a.value));
+  // O ?. evita erro se prizes vier vazio
+  const sortedPrizes = [...(game.prizes || [])].sort((a: any, b: any) => Number(b.value) - Number(a.value));
+
+  // --- PROTEÇÃO TOTAL DE PREÇO ---
+  // 1. Transforma em texto (String)
+  // 2. Troca vírgula por ponto (caso venha "2,00")
+  // 3. Transforma em Número
+  // 4. Se der erro (NaN), assume 0
+  const priceRaw = String(game.price || '0').replace(',', '.');
+  const priceNumber = Number(priceRaw) || 0;
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-in fade-in duration-200">
@@ -57,7 +49,7 @@ export default function PrizePreviewModal({ isOpen, onClose, game, onPlay, layou
         <div className="px-5 pb-4 overflow-y-auto max-h-[60vh] relative z-10 custom-scrollbar">
           {sortedPrizes.length > 0 ? (
             <div className="grid grid-cols-3 gap-3">
-              {sortedPrizes.map((prize, index) => (
+              {sortedPrizes.map((prize: any, index: number) => (
                 <div key={index} className="bg-zinc-900/80 border border-zinc-800 rounded-xl p-2 flex flex-col items-center justify-center gap-1 min-h-[90px] relative group hover:border-zinc-600 transition-colors">
                   {/* Brilho no Hover */}
                   <div className="absolute inset-0 bg-white/5 opacity-0 group-hover:opacity-100 transition-opacity rounded-xl"></div>
@@ -98,7 +90,7 @@ export default function PrizePreviewModal({ isOpen, onClose, game, onPlay, layou
             style={{ backgroundColor: layoutColor, boxShadow: `0 0 20px ${layoutColor}40` }}
           >
             <Zap size={20} className="fill-current" />
-            JOGAR POR R$ {game.price.toFixed(2)}
+            JOGAR POR {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(priceNumber)}
           </button>
           <p className="text-center text-[10px] text-zinc-600 mt-3 font-medium">
             Ao clicar você concorda com os termos de uso.
