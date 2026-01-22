@@ -11,7 +11,7 @@ import { db, app } from '../lib/firebase';
 import { doc, getDoc, collection, getDocs, onSnapshot, updateDoc, increment } from 'firebase/firestore'; 
 import { getAuth, onAuthStateChanged, signOut } from 'firebase/auth';
 import {
-  User, Trophy, ChevronLeft, Home as HomeIcon, Grid, PlusCircle, Bell, Zap, Star, XCircle, RotateCw, Gift, ChevronRight, Play
+  User, Trophy, ChevronLeft, Home as HomeIcon, Grid, PlusCircle, Bell, Zap, Star, XCircle, RotateCw, Gift, ChevronRight, Play, Frown
 } from 'lucide-react';
 
 interface Prize { name: string; value: number; chance: number; image?: string; }
@@ -99,7 +99,7 @@ export default function Home() {
   
   const handleBackToLobby = () => { setShowPopup(false); setIsGameFinished(false); setActiveGame(null); setView('LOBBY'); };
 
-  // --- LÓGICA DA RASPADINHA ---
+  // --- LÓGICA DA RASPADINHA (REFINADA) ---
   const playRound = async () => {
     if (!activeGame) return;
     if (balance < activeGame.price) { setIsDepositOpen(true); return; }
@@ -111,40 +111,78 @@ export default function Home() {
     if (winAudioRef.current) { winAudioRef.current.pause(); winAudioRef.current.currentTime = 0; }
     await new Promise(resolve => setTimeout(resolve, 500));
 
+    // 1. SORTEIO DO VENCEDOR (OU NÃO)
     let winningPrize: Prize | null = null;
     const random = Math.random() * 100;
     let cumulativeChance = 0;
+    
+    // Calcula se ganhou algo
     for (const prize of activeGame.prizes) {
         cumulativeChance += (Number(prize.chance) || 0);
         if (random <= cumulativeChance) { winningPrize = prize; break; }
     }
+
     let finalGrid: Prize[] = [];
     const loserPlaceholder: Prize = { name: 'Tente+', value: 0, chance: 0, image: '' };
+    
+    // Lista de prêmios disponíveis para usar como "isca" (Decoys)
+    // Se tiver poucos prêmios, duplicamos a lista para ter variedade
+    let availablePrizes = [...activeGame.prizes];
+    if (availablePrizes.length < 5) availablePrizes = [...availablePrizes, ...availablePrizes];
+
     if (winningPrize) {
+        // --- CENÁRIO: VITÓRIA ---
+        // Coloca 3 prêmios vencedores
         finalGrid.push(winningPrize, winningPrize, winningPrize);
+        
+        // Preenche o resto (6 espaços) com outros prêmios aleatórios
+        // Garantindo que nenhum outro apareça 3 vezes para não confundir
         const otherOptions = activeGame.prizes.filter((p: Prize) => p.name !== winningPrize?.name);
+        
         for (let i = 0; i < 6; i++) {
             let selectedFiller = loserPlaceholder;
+            
             if (otherOptions.length > 0) {
+                // Tenta pegar um prêmio aleatório
                 const candidate = otherOptions[Math.floor(Math.random() * otherOptions.length)];
+                // Verifica quantas vezes ele já está no grid
                 const count = finalGrid.filter(p => p.name === candidate.name).length;
-                if (count < 2) selectedFiller = candidate;
+                
+                // Só adiciona se tiver menos de 2 (para não criar outro vencedor acidental)
+                if (count < 2) {
+                    selectedFiller = candidate;
+                }
             }
+            // Se não conseguiu achar um válido (raro), usa o placeholder, mas tenta evitar
             finalGrid.push(selectedFiller);
         }
+
     } else {
+        // --- CENÁRIO: DERROTA (O ajuste principal é aqui) ---
+        // Objetivo: Preencher 9 espaços com símbolos reais, SEM repetir 3 iguais.
+        
+        const counts: Record<string, number> = {};
+        
         for (let i = 0; i < 9; i++) {
-            if (Math.random() > 0.3) { finalGrid.push(loserPlaceholder); } 
-            else {
-                 const randomReal = activeGame.prizes[Math.floor(Math.random() * activeGame.prizes.length)];
-                 if (randomReal) {
-                     const count = finalGrid.filter(p => p.name === randomReal.name).length;
-                     if (count < 2) finalGrid.push(randomReal); else finalGrid.push(loserPlaceholder);
-                 } else { finalGrid.push(loserPlaceholder); }
+            // Filtra prêmios que ainda não apareceram 2 vezes
+            const candidates = activeGame.prizes.filter((p: Prize) => (counts[p.name] || 0) < 2);
+            
+            if (candidates.length > 0) {
+                // Escolhe um candidato válido
+                const randomPrize = candidates[Math.floor(Math.random() * candidates.length)];
+                finalGrid.push(randomPrize);
+                counts[randomPrize.name] = (counts[randomPrize.name] || 0) + 1;
+            } else {
+                // Caso extremo: Se acabarem as opções (ex: só tem 2 prêmios cadastrados no jogo todo)
+                // Aí somos obrigados a colocar o placeholder
+                finalGrid.push(loserPlaceholder);
             }
         }
     }
+
+    // Embaralha tudo para o prêmio não ficar sempre no começo
     finalGrid = finalGrid.sort(() => Math.random() - 0.5);
+    
     setPrizesGrid(finalGrid); setLoading(false); setGameId(prev => prev + 1);
   };
 
@@ -240,7 +278,12 @@ export default function Home() {
                       <div className="absolute inset-0 grid grid-cols-3 grid-rows-3 gap-2 p-2 bg-zinc-900">
                         {prizesGrid.map((prize, index) => (
                           <div key={index} className={`rounded-lg flex flex-col items-center justify-center border transition-all duration-500 overflow-hidden relative ${winningIndices.includes(index) ? 'border-white z-10 scale-105 shadow-lg' : 'bg-white border-zinc-300'}`} style={winningIndices.includes(index) ? { backgroundColor: layoutConfig.color, boxShadow: `0 0 20px ${layoutConfig.color}99` } : {}}>
-                            {prize.image ? <img src={prize.image} alt={prize.name} className="w-[80%] h-[80%] object-contain drop-shadow-sm" /> : <span className={`font-black text-center leading-tight select-none p-1 ${winningIndices.includes(index) ? 'text-black text-xs' : 'text-zinc-900 text-[10px]'}`}>{prize.name}</span>}
+                            {prize.image ? (
+                                <img src={prize.image} alt={prize.name} className="w-[80%] h-[80%] object-contain drop-shadow-sm" />
+                            ) : (
+                                /* FALLBACK: Se não tiver imagem, verifica se é placeholder */
+                                prize.name === 'Tente+' ? <Frown className="text-zinc-300" size={32} /> : <span className={`font-black text-center leading-tight select-none p-1 ${winningIndices.includes(index) ? 'text-black text-xs' : 'text-zinc-900 text-[10px]'}`}>{prize.name}</span>
+                            )}
                           </div>
                         ))}
                       </div>
