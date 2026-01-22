@@ -6,7 +6,7 @@ import DepositModal from '../components/DepositModal';
 import { AuthModal } from '../components/AuthModal'; 
 import ProfileSidebar from '../components/ProfileSidebar';
 import PrizePreviewModal from '../components/PrizePreviewModal';
-import WinnersCarousel from '../components/WinnersCarousel'; // <--- IMPORT
+import WinnersCarousel from '../components/WinnersCarousel';
 import confetti from 'canvas-confetti';
 import { db, app } from '../lib/firebase';
 import { doc, getDoc, collection, getDocs, onSnapshot, updateDoc, increment } from 'firebase/firestore'; 
@@ -29,7 +29,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [gameId, setGameId] = useState(0);
   
-  // --- NOVO: LISTA DE GANHADORES DO BANCO ---
+  // --- LISTA DE BANNERS (SOMENTE O QUE VEM DO PAINEL) ---
   const [winnerImages, setWinnerImages] = useState<string[]>([]);
 
   // --- MODAIS ---
@@ -59,27 +59,24 @@ export default function Home() {
 
     const initData = async () => {
         try {
-            // Carrega Config e Jogos
+            // Carrega Config (Só para Logo e Cores agora)
             const docRef = doc(db, 'config', 'layout');
             const docSnap = await getDoc(docRef);
             if (docSnap.exists()) setLayoutConfig(docSnap.data());
             
+            // Carrega Jogos
             const querySnapshot = await getDocs(collection(db, 'games'));
             const list = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Game[];
             setGamesList(list);
 
-            // --- NOVO: Carrega as fotos dos ganhadores ---
+            // --- CARREGA BANNERS DO PAINEL (TUDO JUNTO) ---
             const winnersSnap = await getDocs(collection(db, 'winners'));
-            // Mapeia apenas as imagens (campo 'image') e se houver banner principal, bota ele no começo
-            const winnersList = winnersSnap.docs.map(doc => doc.data().image);
             
-            // Se tiver banner principal na config, adiciona ele como primeiro item
-            // Mas só adiciona se tiver ganhadores. Se não tiver ganhadores, só mostra o banner.
-            if (docSnap.exists() && docSnap.data().banner) {
-                setWinnerImages([docSnap.data().banner, ...winnersList]);
-            } else {
-                setWinnerImages(winnersList);
-            }
+            // Ordena (opcional, aqui pega pela ordem que o Firebase devolve)
+            const bannersList = winnersSnap.docs.map(doc => doc.data().image);
+            
+            // Define APENAS o que veio da coleção 'winners'
+            setWinnerImages(bannersList);
 
         } catch (error) { console.error("Erro carregamento inicial", error); }
     };
@@ -300,9 +297,8 @@ export default function Home() {
           /* --- VIEW: LOBBY (ORIGINAL) --- */
           <main className="px-4 pb-8">
             
-            {/* --- MURAL DE GANHADORES (Substitui o Banner Antigo) --- */}
+            {/* --- MURAL DE GANHADORES & BANNERS (Centralizado) --- */}
             <div className="w-full h-40 md:h-52 rounded-2xl relative overflow-hidden shadow-lg border border-zinc-800 mb-8 bg-zinc-900">
-               {/* Passa as imagens carregadas do banco para o Carrossel */}
                <WinnersCarousel images={winnerImages} />
             </div>
 
@@ -469,9 +465,9 @@ export default function Home() {
             ) : (
                 <div className="max-w-7xl mx-auto px-8">
                     
-                    {/* --- MURAL DE GANHADORES (Desktop) --- */}
+                    {/* --- MURAL DE GANHADORES & BANNERS (Desktop) --- */}
                     <div className="w-full h-[400px] rounded-[2rem] relative overflow-hidden shadow-2xl border border-zinc-800 mb-12 group">
-                        {/* Passa as imagens carregadas do banco para o Carrossel */}
+                        {/* Passa as imagens carregadas do painel para o Carrossel */}
                         <WinnersCarousel images={winnerImages} />
                     </div>
 
