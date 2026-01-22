@@ -5,6 +5,7 @@ import ScratchCard from '../components/ScratchCard';
 import DepositModal from '../components/DepositModal';
 import { AuthModal } from '../components/AuthModal'; 
 import ProfileSidebar from '../components/ProfileSidebar';
+import PrizePreviewModal from '../components/PrizePreviewModal'; // <--- IMPORT NOVO
 import confetti from 'canvas-confetti';
 import { db, app } from '../lib/firebase';
 import { doc, getDoc, collection, getDocs, onSnapshot, updateDoc, increment } from 'firebase/firestore'; 
@@ -20,7 +21,7 @@ export default function Home() {
   // --- ESTADOS GERAIS ---
   const [user, setUser] = useState<any>(null);
   const [balance, setBalance] = useState(0); 
-  const [view, setView] = useState<'LOBBY' | 'GAME'>('LOBBY'); // Removido ROULETTE
+  const [view, setView] = useState<'LOBBY' | 'GAME'>('LOBBY');
   const [gamesList, setGamesList] = useState<Game[]>([]);
   const [activeGame, setActiveGame] = useState<any>(null);
   const [prizesGrid, setPrizesGrid] = useState<Prize[]>([]); 
@@ -31,6 +32,9 @@ export default function Home() {
   const [isDepositOpen, setIsDepositOpen] = useState(false);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  
+  // --- NOVO ESTADO PARA O MODAL DE PRÊMIOS ---
+  const [previewGame, setPreviewGame] = useState<Game | null>(null);
 
   const [layoutConfig, setLayoutConfig] = useState<any>({
     logo: '', banner: '', gameThumb: '', scratchCover: '', color: '#ffc700' 
@@ -291,7 +295,14 @@ export default function Home() {
                                       <span className="text-black font-black text-sm uppercase">JOGAR</span>
                                       <div className="bg-black/20 px-1.5 py-0.5 rounded text-[10px] font-bold text-black">R$ {game.price}</div>
                                   </button>
-                                  <button className="flex items-center gap-1 text-[10px] font-bold text-zinc-400 hover:text-white transition-colors"><Gift size={12} /> VER PRÊMIOS <ChevronRight size={10} /></button>
+                                  
+                                  {/* --- BOTÃO VER PRÊMIOS (MOBILE) --- */}
+                                  <button 
+                                    onClick={() => setPreviewGame(game)}
+                                    className="flex items-center gap-1 text-[10px] font-bold text-zinc-400 hover:text-white transition-colors"
+                                  >
+                                    <Gift size={12} /> VER PRÊMIOS <ChevronRight size={10} />
+                                  </button>
                               </div>
                           </div>
                       </div>
@@ -461,6 +472,15 @@ export default function Home() {
                                             <button onClick={() => handleEnterGame(game)} className="w-full bg-yellow-500 hover:bg-yellow-400 text-black font-black py-3 rounded-xl flex items-center justify-center gap-2 transition-transform active:scale-95 shadow-lg">
                                                 <Zap size={18} className="fill-current" /> JOGAR
                                             </button>
+                                            
+                                            {/* --- BOTÃO VER PRÊMIOS (DESKTOP) --- */}
+                                            <button 
+                                                onClick={() => setPreviewGame(game)}
+                                                className="w-full text-zinc-500 hover:text-white font-bold text-xs uppercase flex items-center justify-center gap-2 transition-colors"
+                                            >
+                                                <Gift size={12} /> Ver todos os prêmios
+                                            </button>
+
                                         </div>
                                     </div>
                                 </div>
@@ -519,6 +539,16 @@ export default function Home() {
         balance={balance}
         onLogout={handleLogout}
       />
+      
+      {/* NOVO MODAL DE PREVIEW DE PRÊMIOS */}
+      <PrizePreviewModal 
+        isOpen={!!previewGame}
+        game={previewGame}
+        onClose={() => setPreviewGame(null)}
+        onPlay={(game) => handleEnterGame(game)}
+        layoutColor={layoutConfig.color}
+      />
+
     </>
   );
 }
