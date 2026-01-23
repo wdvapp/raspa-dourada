@@ -1,221 +1,280 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { db } from '../../../lib/firebase';
-import { collection, addDoc, getDocs, query, where, getDoc, doc } from 'firebase/firestore';
-import { Megaphone, Search, UserCheck, Trophy, Target, Save, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+// Ajuste para garantir que encontre o arquivo, igual ao seu deposit/route.ts
+import { db } from '../../../lib/firebase'; 
+import { collection, addDoc, getDocs, query, where, orderBy, limit, deleteDoc, doc } from 'firebase/firestore';
+import { Megaphone, Search, UserCheck, Save, Trash2, ArrowLeft, CheckCircle2, AlertTriangle } from 'lucide-react';
 
 export default function InfluencerMode() {
+  const router = useRouter();
   const [loading, setLoading] = useState(false);
   
-  // 1. BUSCA DE USUÁRIO
+  // FORMULÁRIO
   const [emailSearch, setEmailSearch] = useState('');
   const [foundUser, setFoundUser] = useState<any>(null);
-
-  // 2. SELEÇÃO DO JOGO
   const [games, setGames] = useState<any[]>([]);
   const [selectedGame, setSelectedGame] = useState<any>(null);
+  const [selectedPrizeIndex, setSelectedPrizeIndex] = useState<string>('');
+  const [roundNumber, setRoundNumber] = useState(1);
 
-  // 3. CONFIGURAÇÃO DA VITÓRIA
-  const [selectedPrizeIndex, setSelectedPrizeIndex] = useState<string>(''); // Index do array de prêmios
-  const [roundNumber, setRoundNumber] = useState(1); // Ganhar na 1ª, 2ª, 3ª tentativa...
+  // LISTA DE ARMAÇÕES ATIVAS
+  const [activeRigs, setActiveRigs] = useState<any[]>([]);
 
-  // Carrega os jogos disponíveis assim que abre a tela
-  useEffect(() => {
-    const fetchGames = async () => {
-      const snap = await getDocs(collection(db, 'games'));
-      setGames(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    };
-    fetchGames();
-  }, []);
-
-  // Função para buscar usuário pelo E-mail
-  const handleSearchUser = async () => {
-    if (!emailSearch) return;
-    setLoading(true);
-    setFoundUser(null);
+  // 1. CARREGAR JOGOS E LISTA DE ARMAÇÕES
+  const fetchData = async () => {
     try {
-      // Busca exata pelo email
-      const q = query(collection(db, 'users'), where('email', '==', emailSearch));
-      const snap = await getDocs(q);
-      
-      if (!snap.empty) {
-        const userDoc = snap.docs[0];
-        setFoundUser({ id: userDoc.id, ...userDoc.data() });
-      } else {
-        alert("Usuário não encontrado!");
-      }
+        // Jogos
+        const gamesSnap = await getDocs(collection(db, 'games'));
+        const gamesList = gamesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+        setGames(gamesList);
+
+        // Lista de Vitórias Armadas
+        const rigsQ = query(collection(db, 'rigged_wins'), orderBy('createdAt', 'desc'), limit(50));
+        const rigsSnap = await getDocs(rigsQ);
+        
+        // Cruzar dados para mostrar nomes
+        const rigsData = rigsSnap.docs.map(docSnap => {
+          const data = docSnap.data();
+          // Encontra o jogo correspondente
+          const game: any = gamesList.find((g: any) => g.id === data.gameId);
+          // Encontra o nome do prêmio
+          const prizeName = game?.prizes?.[data.prizeIndex]?.name || 'Prêmio desconhecido';
+          const gameName = game?.name || 'Jogo deletado';
+          
+          return { id: docSnap.id, ...data, gameName, prizeName };
+        });
+        
+        setActiveRigs(rigsData);
     } catch (error) {
-      console.error(error);
-      alert("Erro ao buscar usuário.");
-    } finally {
-      setLoading(false);
+        console.error("Erro ao carregar dados:", error);
     }
   };
 
-  // Função para Salvar a "Manipulação"
-  const handleSaveRiggedResult = async () => {
-    if (!foundUser || !selectedGame || selectedPrizeIndex === '') return alert("Preencha tudo!");
+  useEffect(() => {
+    fetchData();
+  }, []);
 
+  // 2. BUSCAR USUÁRIO
+  const handleSearchUser = async () => {
+    if (!emailSearch) return;
     setLoading(true);
     try {
-      // Salva na coleção 'rigged_wins' (Vitórias Armadas)
-      // O Jogo terá que ler essa coleção antes de sortear o resultado aleatório
+        const q = query(collection(db, 'users'), where('email', '==', emailSearch));
+        const snap = await getDocs(q);
+        if (!snap.empty) {
+            setFoundUser({ id: snap.docs[0].id, ...snap.docs[0].data() });
+        } else {
+            alert("Usuário não encontrado!");
+            setFoundUser(null);
+        }
+    } catch (error) {
+        console.error(error);
+        alert("Erro ao buscar usuário.");
+    } finally {
+        setLoading(false);
+    }
+  };
+
+  // 3. SALVAR ARMAÇÃO
+  const handleSave = async () => {
+    if (!foundUser || !selectedGame || selectedPrizeIndex === '') return alert("Preencha tudo!");
+    setLoading(true);
+
+    try {
       await addDoc(collection(db, 'rigged_wins'), {
         userId: foundUser.id,
         userEmail: foundUser.email,
         gameId: selectedGame.id,
         prizeIndex: Number(selectedPrizeIndex),
-        triggerOnRound: Number(roundNumber), // Ex: Ganhar na tentativa 3
-        active: true, // Ainda não foi usado
+        triggerOnRound: Number(roundNumber),
+        active: true,
         createdAt: Date.now()
       });
 
-      alert(`✅ SUCESSO!\n\nQuando o usuário ${foundUser.email} jogar "${selectedGame.name}", ele vai ganhar o prêmio na jogada nº ${roundNumber}.`);
+      alert(`✅ SUCESSO! Configuração salva para ${foundUser.email}.`);
       
-      // Limpar campos
-      setFoundUser(null);
-      setEmailSearch('');
-      setSelectedGame(null);
+      // Limpa formulário
+      setFoundUser(null); 
+      setEmailSearch(''); 
+      setSelectedGame(null); 
       setSelectedPrizeIndex('');
+      
+      // Atualiza a lista imediatamente
+      fetchData(); 
+
     } catch (error) {
       console.error(error);
-      alert("Erro ao salvar configuração.");
+      alert("Erro ao salvar.");
     } finally {
       setLoading(false);
     }
   };
 
+  // 4. DELETAR ARMAÇÃO
+  const handleDeleteRig = async (id: string) => {
+    if(confirm("Tem certeza? O usuário voltará a ter resultados aleatórios normais.")) {
+        try {
+            await deleteDoc(doc(db, 'rigged_wins', id));
+            // Remove da lista visualmente
+            setActiveRigs(prev => prev.filter(r => r.id !== id));
+        } catch (error) {
+            console.error("Erro ao deletar:", error);
+            alert("Erro ao excluir.");
+        }
+    }
+  };
+
   return (
-    <div className="max-w-4xl mx-auto p-6 text-white space-y-8">
+    <div className="max-w-5xl mx-auto p-6 text-white space-y-8 animate-in fade-in duration-500">
         
-        <div>
-            <h1 className="text-3xl font-black mb-2 flex items-center gap-2">
-                <Megaphone className="text-[#ffc700]"/> Modo Influenciador
-            </h1>
-            <p className="text-zinc-500">Configure uma vitória garantida para gravar vídeos de divulgação.</p>
+        {/* HEADER COM BOTÃO VOLTAR CORRIGIDO */}
+        <div className="flex items-center gap-4">
+            <button 
+                onClick={() => router.push('/admin')} 
+                className="bg-zinc-900 p-2 rounded-lg hover:bg-zinc-800 transition-colors border border-zinc-800"
+            >
+                <ArrowLeft size={24}/>
+            </button>
+            <div>
+                <h1 className="text-3xl font-black flex items-center gap-2">
+                    <Megaphone className="text-[#ffc700]"/> Modo Influenciador
+                </h1>
+                <p className="text-zinc-500">Configure resultados garantidos para vídeos.</p>
+            </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+        {/* --- ÁREA DE CADASTRO --- */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             
-            {/* PASSO 1: ENCONTRAR O USUÁRIO */}
-            <div className={`p-6 rounded-2xl border ${foundUser ? 'bg-green-900/10 border-green-500/50' : 'bg-zinc-900 border-zinc-800'}`}>
-                <h3 className="font-bold text-[#ffc700] text-sm uppercase mb-4 flex items-center gap-2">1. Selecionar Influenciador</h3>
-                
-                <div className="flex gap-2 mb-4">
+            {/* SELEÇÃO USUÁRIO */}
+            <div className="bg-zinc-900 p-6 rounded-2xl border border-zinc-800 space-y-4">
+                <h3 className="text-[#ffc700] font-bold text-sm uppercase">1. Selecionar Influenciador</h3>
+                <div className="flex gap-2">
                     <input 
-                        type="email" 
+                        value={emailSearch} 
+                        onChange={e => setEmailSearch(e.target.value)} 
                         placeholder="E-mail do usuário..." 
-                        value={emailSearch}
-                        onChange={e => setEmailSearch(e.target.value)}
-                        className="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-sm focus:border-[#ffc700] outline-none"
+                        className="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white focus:border-[#ffc700] outline-none"
                     />
-                    <button onClick={handleSearchUser} disabled={loading} className="bg-zinc-800 hover:bg-zinc-700 p-3 rounded-xl transition-colors">
-                        <Search size={20} />
+                    <button onClick={handleSearchUser} disabled={loading} className="bg-zinc-800 hover:bg-zinc-700 p-3 rounded-xl transition-colors border border-zinc-700">
+                        <Search/>
                     </button>
                 </div>
-
                 {foundUser && (
-                    <div className="flex items-center gap-3 bg-zinc-950 p-3 rounded-xl border border-green-900/30">
-                        <div className="w-10 h-10 rounded-full bg-green-500/20 text-green-500 flex items-center justify-center">
-                            <UserCheck size={20} />
-                        </div>
-                        <div>
-                            <p className="font-bold text-white text-sm">{foundUser.email}</p>
-                            <p className="text-xs text-zinc-500">ID: ...{foundUser.id.slice(-6)}</p>
-                        </div>
+                    <div className="flex items-center gap-3 bg-green-900/20 border border-green-900/50 p-3 rounded-xl text-green-500 font-bold animate-in fade-in">
+                        <UserCheck size={20} /> {foundUser.email}
                     </div>
                 )}
             </div>
 
-            {/* PASSO 2: ESCOLHER O JOGO */}
-            <div className={`p-6 rounded-2xl border ${selectedGame ? 'bg-[#ffc700]/5 border-[#ffc700]/30' : 'bg-zinc-900 border-zinc-800'} ${!foundUser ? 'opacity-50 pointer-events-none' : ''}`}>
-                <h3 className="font-bold text-[#ffc700] text-sm uppercase mb-4 flex items-center gap-2">2. Escolher Raspadinha</h3>
-                
+            {/* SELEÇÃO JOGO E PRÊMIO */}
+            <div className={`bg-zinc-900 p-6 rounded-2xl border border-zinc-800 space-y-4 ${!foundUser ? 'opacity-50 pointer-events-none' : ''}`}>
+                <h3 className="text-[#ffc700] font-bold text-sm uppercase">2. O que ele vai ganhar?</h3>
                 <select 
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-sm text-white focus:border-[#ffc700] outline-none"
-                    onChange={(e) => {
-                        const game = games.find(g => g.id === e.target.value);
-                        setSelectedGame(game);
-                        setSelectedPrizeIndex(''); // Reseta prêmio se trocar jogo
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white focus:border-[#ffc700] outline-none" 
+                    onChange={e => {
+                        const g = games.find((game: any) => game.id === e.target.value);
+                        setSelectedGame(g);
                     }}
                 >
-                    <option value="">Selecione um jogo...</option>
-                    {games.map(g => (
-                        <option key={g.id} value={g.id}>{g.name} (R$ {Number(g.price).toFixed(2)})</option>
-                    ))}
+                    <option value="">Selecione a Raspadinha...</option>
+                    {games.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
                 </select>
 
                 {selectedGame && (
-                    <div className="mt-4 flex gap-3">
-                        <img src={selectedGame.cover} className="w-16 h-16 object-cover rounded-lg border border-zinc-700" />
-                        <div>
-                            <p className="font-bold text-sm">{selectedGame.name}</p>
-                            <p className="text-xs text-zinc-500">{selectedGame.prizes?.length || 0} prêmios disponíveis</p>
-                        </div>
+                    <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto custom-scrollbar">
+                        {selectedGame.prizes?.map((p: any, i: number) => (
+                            <div 
+                                key={i} 
+                                onClick={() => setSelectedPrizeIndex(i.toString())} 
+                                className={`p-2 border rounded-lg cursor-pointer text-xs transition-colors ${selectedPrizeIndex === i.toString() ? 'bg-green-500 text-black border-green-500 font-bold' : 'border-zinc-800 text-zinc-400 hover:border-zinc-600'}`}
+                            >
+                                {p.name} <br/> <span className="opacity-70">R$ {Number(p.value).toFixed(2)}</span>
+                            </div>
+                        ))}
                     </div>
                 )}
             </div>
 
-            {/* PASSO 3: O PRÊMIO E A RODADA */}
-            <div className={`md:col-span-2 p-6 rounded-2xl border bg-zinc-900 border-zinc-800 ${!selectedGame ? 'opacity-50 pointer-events-none' : ''}`}>
-                <h3 className="font-bold text-[#ffc700] text-sm uppercase mb-4 flex items-center gap-2">3. Configurar Vitória</h3>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {/* Escolher Prêmio */}
-                    <div>
-                        <label className="text-xs font-bold text-zinc-400 uppercase block mb-2">Qual prêmio ele vai ganhar?</label>
-                        <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
-                            {selectedGame?.prizes?.map((prize: any, idx: number) => (
-                                <div 
-                                    key={idx}
-                                    onClick={() => setSelectedPrizeIndex(idx.toString())}
-                                    className={`p-3 rounded-xl border cursor-pointer flex items-center gap-2 transition-all ${selectedPrizeIndex === idx.toString() ? 'bg-green-500 text-black border-green-400' : 'bg-zinc-950 text-zinc-400 border-zinc-800 hover:border-zinc-600'}`}
-                                >
-                                    <Trophy size={16} />
-                                    <div>
-                                        <p className="font-bold text-xs">{prize.name}</p>
-                                        <p className="text-[10px] opacity-80">R$ {Number(prize.value).toFixed(2)}</p>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-
-                    {/* Escolher Rodada */}
-                    <div>
-                        <label className="text-xs font-bold text-zinc-400 uppercase block mb-2">Em qual tentativa?</label>
-                        <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-4">
-                            <div className="flex items-center justify-between mb-2">
-                                <span className="text-sm font-bold">Rodada nº {roundNumber}</span>
-                                <Target className="text-[#ffc700]" size={20} />
-                            </div>
+            {/* CONFIGURAÇÃO DA RODADA */}
+            <div className={`lg:col-span-2 bg-zinc-900 p-6 rounded-2xl border border-zinc-800 ${!selectedGame ? 'opacity-50 pointer-events-none' : ''}`}>
+                <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+                    <div className="flex-1 w-full">
+                        <h3 className="text-[#ffc700] font-bold text-sm uppercase mb-2">3. Ganha em qual rodada?</h3>
+                        <div className="flex items-center gap-4">
                             <input 
                                 type="range" 
                                 min="1" 
                                 max="10" 
-                                step="1"
-                                value={roundNumber}
-                                onChange={(e) => setRoundNumber(Number(e.target.value))}
-                                className="w-full accent-[#ffc700] h-2 bg-zinc-800 rounded-lg appearance-none cursor-pointer"
+                                value={roundNumber} 
+                                onChange={e => setRoundNumber(Number(e.target.value))} 
+                                className="flex-1 accent-[#ffc700] h-2 bg-zinc-800 rounded-lg appearance-none cursor-pointer"
                             />
-                            <p className="text-xs text-zinc-500 mt-2">
-                                {roundNumber === 1 ? 'Ele vai ganhar logo na PRIMEIRA vez que jogar.' : `Ele vai perder ${roundNumber - 1} vezes e ganhar na ${roundNumber}ª.`}
-                            </p>
+                            <span className="font-black text-3xl text-white w-16 text-center">{roundNumber}ª</span>
                         </div>
-
-                        <button 
-                            onClick={handleSaveRiggedResult}
-                            disabled={loading || selectedPrizeIndex === ''}
-                            className="w-full mt-6 bg-[#ffc700] hover:bg-[#e6b300] disabled:opacity-50 disabled:cursor-not-allowed text-black font-black py-4 rounded-xl shadow-lg shadow-yellow-500/10 flex items-center justify-center gap-2 transition-transform active:scale-95"
-                        >
-                            {loading ? "Salvando..." : <><Save size={20} /> ARMAR VITÓRIA</>}
-                        </button>
+                        <p className="text-zinc-500 text-xs mt-1">
+                            {roundNumber === 1 
+                                ? "O usuário ganha logo na PRIMEIRA tentativa." 
+                                : `O usuário perde ${roundNumber - 1} vezes e ganha na ${roundNumber}ª.`}
+                        </p>
                     </div>
+
+                    <button 
+                        onClick={handleSave} 
+                        disabled={loading || selectedPrizeIndex === ''}
+                        className="w-full md:w-auto bg-[#ffc700] hover:bg-[#e6b300] disabled:opacity-50 text-black font-black py-4 px-8 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-yellow-500/10 transition-transform active:scale-95 whitespace-nowrap"
+                    >
+                        {loading ? "SALVANDO..." : <><Save size={20}/> SALVAR ARMAÇÃO</>}
+                    </button>
                 </div>
             </div>
-
         </div>
+
+        {/* --- LISTA DE INFLUENCIADORES ATIVOS (AQUI FICA SALVO) --- */}
+        <div className="pt-8 border-t border-zinc-800">
+            <h2 className="text-xl font-bold mb-4 flex items-center gap-2 text-white">
+                <AlertTriangle className="text-blue-500" /> Influenciadores Configurados ({activeRigs.length})
+            </h2>
+            
+            <div className="grid gap-3">
+                {activeRigs.map((rig) => (
+                    <div key={rig.id} className="bg-zinc-900/50 border border-zinc-800 p-4 rounded-xl flex flex-col md:flex-row items-center justify-between gap-4">
+                        <div className="flex items-center gap-4 w-full">
+                            <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold flex-shrink-0 ${rig.active ? 'bg-green-500 text-black' : 'bg-zinc-700 text-zinc-400'}`}>
+                                <CheckCircle2 size={20}/>
+                            </div>
+                            <div>
+                                <p className="font-bold text-white text-sm">{rig.userEmail}</p>
+                                <p className="text-xs text-zinc-400">
+                                    Jogo: <span className="text-white">{rig.gameName}</span> • 
+                                    Prêmio: <span className="text-[#ffc700]">{rig.prizeName}</span> • 
+                                    Na <span className="text-white font-bold">{rig.triggerOnRound}ª</span> rodada
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-3 w-full md:w-auto justify-end">
+                            <span className={`text-[10px] uppercase font-bold px-2 py-1 rounded whitespace-nowrap ${rig.active ? 'bg-blue-500/20 text-blue-400' : 'bg-zinc-800 text-zinc-500'}`}>
+                                {rig.active ? 'AGUARDANDO JOGAR' : 'JÁ REALIZADO'}
+                            </span>
+                            <button onClick={() => handleDeleteRig(rig.id)} className="p-2 text-zinc-500 hover:text-red-500 hover:bg-red-900/20 rounded-lg transition-colors" title="Excluir Armação">
+                                <Trash2 size={18} />
+                            </button>
+                        </div>
+                    </div>
+                ))}
+
+                {activeRigs.length === 0 && (
+                    <div className="text-zinc-600 text-center py-8 bg-zinc-900/30 rounded-xl border border-dashed border-zinc-800">
+                        <p>Nenhuma vitória armada no momento.</p>
+                        <p className="text-xs mt-1">Use o formulário acima para configurar.</p>
+                    </div>
+                )}
+            </div>
+        </div>
+
     </div>
   );
 }
