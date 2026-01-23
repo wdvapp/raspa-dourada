@@ -1,299 +1,170 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation'; // Importante para navegação
-import { 
-  Users, 
-  DollarSign, 
-  Settings, 
-  LogOut, 
-  Save,
-  CheckCircle,
-  LayoutDashboard,
-  Trophy,
-  Target,
-  Palette
-} from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { db } from '../../lib/firebase';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, query, orderBy, limit, onSnapshot, where } from 'firebase/firestore';
+import { DollarSign, Users, TrendingUp, Calendar, ArrowUpRight } from 'lucide-react';
 
 export default function AdminDashboard() {
-  const router = useRouter(); // Hook de navegação
-  const [activeTab, setActiveTab] = useState('DASHBOARD');
-  const [games, setGames] = useState<any[]>([]);
-  
-  // Configuração da Trapaça Inteligente
-  const [marketingConfig, setMarketingConfig] = useState({
-    targetEmail: '', 
-    gameId: '',
-    prizeIndex: 0,
-    roundNumber: 4 
+  const [stats, setStats] = useState({
+    todayRevenue: 0,
+    weekRevenue: 0,
+    totalUsers: 0
   });
-  const [isSaved, setIsSaved] = useState(false);
-
-  // Dados Mockados
-  const faturamentoHoje = 12000.00;
-  const faturamento7Dias = 58000.00;
-
-  const ultimosDepositantes = [
-    { nome: 'Jéssica', email: 'jessica@gmail.com', valor: 10.00 },
-    { nome: 'Marcos', email: 'marcao@gmail.com', valor: 10.00 },
-    { nome: 'Pedro', email: 'pedro@hotmail.com', valor: 50.00 },
-    { nome: 'Ana', email: 'ana.souza@uol.com.br', valor: 20.00 },
-  ];
-
-  const ultimosUsuarios = [
-    { nome: 'Marcos', login: 'marcao@gmail.com' },
-    { nome: 'Jéssica', login: 'jessica@gmail.com' },
-    { nome: 'Felipe', login: 'felipe_99' },
-    { nome: 'Bruno', login: 'bruno.gamer' },
-  ];
+  const [recentDeposits, setRecentDeposits] = useState<any[]>([]);
+  const [recentUsers, setRecentUsers] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const fetchGames = async () => {
-        try {
-            const querySnapshot = await getDocs(collection(db, 'games'));
-            const list = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            setGames(list);
-        } catch (e) {
-            console.error("Erro ao buscar jogos", e);
-        }
+    // 1. MONITORAR DEPÓSITOS (Para Faturamento)
+    const qDeposits = query(collection(db, 'deposits'), where('status', '==', 'completed'));
+    
+    const unsubscribeDeposits = onSnapshot(qDeposits, (snapshot) => {
+      let today = 0;
+      let week = 0;
+      const now = new Date();
+      const startOfDay = new Date(now.setHours(0,0,0,0));
+      const startOfWeek = new Date(now.setDate(now.getDate() - 7));
+
+      const depositsList: any[] = [];
+
+      snapshot.docs.forEach(doc => {
+        const data = doc.data();
+        const amount = Number(data.amount) || 0;
+        
+        // Conversão de Timestamp do Firebase para Date JS
+        const date = data.paidAt ? new Date(data.paidAt.seconds * 1000 || data.paidAt) : new Date();
+
+        // Cálculo Hoje
+        if (date >= startOfDay) today += amount;
+        
+        // Cálculo 7 Dias
+        if (date >= startOfWeek) week += amount;
+
+        depositsList.push({ id: doc.id, ...data, paidAt: date });
+      });
+
+      // Ordenar por data (mais recente primeiro) e pegar os 5 últimos
+      depositsList.sort((a, b) => b.paidAt - a.paidAt);
+      setRecentDeposits(depositsList.slice(0, 5));
+
+      setStats(prev => ({ ...prev, todayRevenue: today, weekRevenue: week }));
+    });
+
+    // 2. MONITORAR USUÁRIOS (Contagem e Lista Recente)
+    const qUsers = query(collection(db, 'users'), orderBy('createdAt', 'desc')); // Pega todos para contar, ordena pra listar
+    
+    const unsubscribeUsers = onSnapshot(qUsers, (snapshot) => {
+      setStats(prev => ({ ...prev, totalUsers: snapshot.size }));
+      setRecentUsers(snapshot.docs.slice(0, 5).map(doc => ({ id: doc.id, ...doc.data() })));
+      setLoading(false);
+    });
+
+    return () => {
+      unsubscribeDeposits();
+      unsubscribeUsers();
     };
-    fetchGames();
   }, []);
 
-  const saveMarketingConfig = () => {
-    if (!marketingConfig.targetEmail) return alert("Digite o e-mail do usuário alvo!");
-    if (!marketingConfig.gameId) return alert("Selecione um jogo!");
-
-    const configData = {
-        targetUser: marketingConfig.targetEmail,
-        targetGameId: marketingConfig.gameId,
-        targetPrizeIndex: marketingConfig.prizeIndex,
-        targetRound: marketingConfig.roundNumber
-    };
-
-    localStorage.setItem(`marketing_config_${marketingConfig.targetEmail}`, JSON.stringify(configData));
-    localStorage.setItem(`marketing_round_${marketingConfig.targetEmail}`, '0'); 
-
-    setIsSaved(true);
-    setTimeout(() => setIsSaved(false), 3000);
-  };
-
-  // --- FUNÇÃO DE NAVEGAÇÃO INTELIGENTE ---
-  const handleNavigation = (key: string) => {
-      switch(key) {
-          case 'GAMES':
-              // Redireciona para a página de criação de jogos
-              router.push('/admin/games');
-              break;
-          case 'USERS':
-              // Exemplo: router.push('/admin/users');
-              alert("Página de Usuários ainda não criada. Crie em /admin/users");
-              break;
-          case 'DEPOSITS':
-              alert("Página de Depósitos ainda não criada.");
-              break;
-          case 'HOME':
-              router.push('/'); // Voltar para o site
-              break;
-          default:
-              // Se não for página externa, troca a aba interna (Dashboard/Marketing)
-              setActiveTab(key);
-      }
-  };
+  if (loading) return <div className="text-white text-center p-10">Carregando dados da empresa...</div>;
 
   return (
-    <div className="min-h-screen bg-[#121212] text-white font-sans flex">
+    <div className="max-w-6xl mx-auto space-y-8 animate-in fade-in duration-500">
       
-      {/* SIDEBAR (Fixa no Desktop) */}
-      <aside className="w-72 p-4 flex flex-col gap-2 border-r border-white/5 bg-[#1a1a1a] hidden md:flex">
-        <div className="bg-[#FFC700] text-black font-black text-center py-3 rounded text-lg uppercase tracking-wider mb-6 shadow-lg shadow-yellow-500/20">
-          CONTROLES
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+            <h1 className="text-3xl font-black text-white">Dashboard</h1>
+            <p className="text-zinc-500">Visão geral do faturamento em tempo real.</p>
         </div>
+      </div>
 
-        {/* Botões Internos (Abas) */}
-        <SidebarButton label="Dashboard" icon={<LayoutDashboard size={18}/>} active={activeTab === 'DASHBOARD'} onClick={() => handleNavigation('DASHBOARD')} />
-        <SidebarButton label="Modo Marketing" icon={<Settings size={18}/>} active={activeTab === 'MARKETING'} onClick={() => handleNavigation('MARKETING')} highlight />
-        
-        <div className="h-px bg-white/10 my-2"></div>
-
-        {/* Botões Externos (Links para outras páginas) */}
-        <SidebarButton label="Raspadinhas" icon={<Trophy size={18}/>} active={false} onClick={() => handleNavigation('GAMES')} />
-        <SidebarButton label="Usuários" icon={<Users size={18}/>} active={false} onClick={() => handleNavigation('USERS')} />
-        <SidebarButton label="Depósitos" icon={<DollarSign size={18}/>} active={false} onClick={() => handleNavigation('DEPOSITS')} />
-        
-        <div className="mt-auto pt-4 border-t border-white/10">
-            <button onClick={() => handleNavigation('HOME')} className="flex items-center gap-2 text-zinc-500 hover:text-red-500 font-bold px-4 transition-colors w-full">
-                <LogOut size={18} /> Voltar ao Site
-            </button>
-        </div>
-      </aside>
-
-      {/* CONTEÚDO */}
-      <main className="flex-1 p-8 bg-[#121212] overflow-y-auto">
-        
-        {/* ABA DASHBOARD */}
-        {activeTab === 'DASHBOARD' && (
-            <div className="flex flex-col gap-8 animate-in fade-in">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                    <div className="bg-[#377a3d] rounded-md h-40 flex flex-col items-center justify-center shadow-lg relative overflow-hidden">
-                        <span className="text-white/80 font-bold text-lg mb-1 relative z-10">Faturamento de Hoje</span>
-                        <span className="text-white font-black text-5xl tracking-tighter relative z-10">
-                            R${faturamentoHoje.toLocaleString('pt-BR', {minimumFractionDigits: 2})}
-                        </span>
-                    </div>
-
-                    <div className="bg-[#785c08] rounded-md h-40 flex flex-col items-center justify-center shadow-lg relative overflow-hidden">
-                        <span className="text-white/80 font-bold text-lg mb-1 relative z-10">Últimos 7 Dias</span>
-                        <span className="text-white font-black text-5xl tracking-tighter relative z-10">
-                            R${faturamento7Dias.toLocaleString('pt-BR', {minimumFractionDigits: 2})}
-                        </span>
-                    </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                    <div className="bg-[#2a2a2a] rounded-md overflow-hidden border border-white/5">
-                        <div className="bg-[#333] p-4 text-center font-bold text-zinc-300 uppercase text-xs tracking-wider">
-                            Últimos depositantes
-                        </div>
-                        <div className="flex flex-col divide-y divide-white/5">
-                            {ultimosDepositantes.map((dep, i) => (
-                                <div key={i} className="p-4 flex items-center justify-between hover:bg-white/5">
-                                    <span className="font-bold text-white">R${dep.valor.toFixed(2)}</span>
-                                    <span className="text-zinc-400 text-sm">{dep.nome} / {dep.email}</span>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-
-                    <div className="bg-[#2a2a2a] rounded-md overflow-hidden border border-white/5">
-                        <div className="bg-[#333] p-4 text-center font-bold text-zinc-300 uppercase text-xs tracking-wider">
-                            Últimos usuários
-                        </div>
-                        <div className="flex flex-col divide-y divide-white/5">
-                            {ultimosUsuarios.map((user, i) => (
-                                <div key={i} className="p-4 flex flex-col hover:bg-white/5">
-                                    <div className="flex justify-between">
-                                        <span className="text-zinc-400 text-sm">Nome: <b className="text-white">{user.nome}</b></span>
-                                    </div>
-                                    <span className="text-zinc-500 text-xs mt-1">Login: {user.login}</span>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                </div>
+      {/* CARDS DE FATURAMENTO */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Card Hoje */}
+        <div className="bg-gradient-to-br from-green-900 to-green-950 border border-green-800 p-8 rounded-3xl relative overflow-hidden group">
+            <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:scale-110 transition-transform">
+                <DollarSign size={100} />
             </div>
-        )}
+            <p className="text-green-400 font-bold uppercase tracking-wider text-sm mb-2 flex items-center gap-2">
+                <TrendingUp size={16} /> Faturamento Hoje
+            </p>
+            <h2 className="text-5xl font-black text-white">
+                R$ {stats.todayRevenue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+            </h2>
+        </div>
 
-        {/* ABA MODO MARKETING */}
-        {activeTab === 'MARKETING' && (
-            <div className="animate-in fade-in max-w-2xl mx-auto mt-6">
-                <div className="bg-[#2a2a2a] border border-yellow-500/30 p-8 rounded-xl relative shadow-2xl">
-                    <div className="absolute top-0 right-0 p-6 opacity-10 text-yellow-500">
-                       <Target size={120} />
-                    </div>
+        {/* Card 7 Dias */}
+        <div className="bg-zinc-900 border border-zinc-800 p-8 rounded-3xl relative overflow-hidden">
+            <div className="absolute top-0 right-0 p-8 opacity-5">
+                <Calendar size={100} className="text-[#ffc700]" />
+            </div>
+            <p className="text-zinc-500 font-bold uppercase tracking-wider text-sm mb-2">
+                Últimos 7 Dias
+            </p>
+            <h2 className="text-5xl font-black text-white">
+                R$ {stats.weekRevenue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+            </h2>
+        </div>
+      </div>
 
-                    <h2 className="text-2xl font-black text-yellow-500 mb-2 uppercase flex items-center gap-2">
-                        Modo Influencer <Settings className="animate-spin-slow" size={24}/>
-                    </h2>
-                    <p className="text-zinc-400 text-sm mb-8 border-b border-white/10 pb-4">
-                        Escolha um usuário específico (sócio ou influencer) para ganhar o prêmio programado.
-                    </p>
-
-                    <div className="space-y-6">
-                        
-                        <div className="bg-[#1a1a1a] p-4 rounded-lg border border-yellow-500/20">
-                            <label className="block text-xs font-bold text-yellow-500 uppercase mb-2 flex items-center gap-2">
-                                <Target size={14}/> E-mail do Usuário Alvo
-                            </label>
-                            <input 
-                                type="email"
-                                placeholder="Ex: socio@gmail.com"
-                                className="w-full bg-[#111] border border-zinc-700 rounded-lg p-3 text-white font-bold focus:border-yellow-500 outline-none transition-colors placeholder:text-zinc-600"
-                                value={marketingConfig.targetEmail}
-                                onChange={(e) => setMarketingConfig({...marketingConfig, targetEmail: e.target.value})}
-                            />
-                            <p className="text-[10px] text-zinc-500 mt-2">
-                                Apenas este usuário terá o resultado manipulado.
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        
+        {/* LISTA DE DEPÓSITOS RECENTES */}
+        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden">
+            <div className="p-6 border-b border-zinc-800 flex justify-between items-center">
+                <h3 className="font-bold text-white flex items-center gap-2"><DollarSign className="text-green-500" size={20}/> Últimos Depósitos</h3>
+            </div>
+            <div className="divide-y divide-zinc-800">
+                {recentDeposits.length > 0 ? recentDeposits.map((deposit) => (
+                    <div key={deposit.id} className="p-4 flex justify-between items-center hover:bg-zinc-800/50 transition-colors">
+                        <div>
+                            <p className="text-white font-bold text-lg">R$ {Number(deposit.amount).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                            <p className="text-xs text-zinc-500">
+                                {deposit.paidAt ? new Date(deposit.paidAt).toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'}) : 'Processando'}
                             </p>
                         </div>
-
-                        <div className="grid grid-cols-2 gap-4">
-                            <div>
-                                <label className="block text-xs font-bold text-zinc-500 uppercase mb-2">1. Jogo</label>
-                                <select 
-                                    className="w-full bg-[#151515] border border-zinc-700 rounded-lg p-3 text-white focus:border-yellow-500 outline-none"
-                                    value={marketingConfig.gameId}
-                                    onChange={(e) => setMarketingConfig({...marketingConfig, gameId: e.target.value})}
-                                >
-                                    <option value="">Selecione...</option>
-                                    {games.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
-                                </select>
-                            </div>
-
-                            <div>
-                                <label className="block text-xs font-bold text-zinc-500 uppercase mb-2">2. Prêmio</label>
-                                <select 
-                                    className="w-full bg-[#151515] border border-zinc-700 rounded-lg p-3 text-white focus:border-yellow-500 outline-none"
-                                    value={marketingConfig.prizeIndex}
-                                    onChange={(e) => setMarketingConfig({...marketingConfig, prizeIndex: Number(e.target.value)})}
-                                    disabled={!marketingConfig.gameId}
-                                >
-                                    <option value="-1">Selecione...</option>
-                                    {marketingConfig.gameId && games.find(g => g.id === marketingConfig.gameId)?.prizes.map((p: any, i: number) => (
-                                        <option key={i} value={i}>{p.name} (R$ {p.value})</option>
-                                    ))}
-                                </select>
-                            </div>
-                        </div>
-
-                        <div>
-                            <label className="block text-xs font-bold text-zinc-500 uppercase mb-2">3. Ganhar na rodada nº:</label>
-                            <div className="flex items-center gap-4 bg-[#151515] p-3 rounded-lg border border-zinc-700">
-                                <input 
-                                    type="number" 
-                                    min="1"
-                                    className="w-20 bg-transparent text-white font-black text-xl text-center outline-none"
-                                    value={marketingConfig.roundNumber}
-                                    onChange={(e) => setMarketingConfig({...marketingConfig, roundNumber: Number(e.target.value)})}
-                                />
-                                <div className="text-zinc-500 text-sm border-l border-zinc-700 pl-4">
-                                    O usuário perderá <strong>{marketingConfig.roundNumber - 1}</strong> vezes e ganhará na <strong>{marketingConfig.roundNumber}ª</strong>.
-                                </div>
-                            </div>
-                        </div>
-
-                        <button 
-                            onClick={saveMarketingConfig}
-                            className="w-full bg-yellow-500 hover:bg-yellow-400 text-black font-black py-4 rounded-lg flex items-center justify-center gap-2 transition-transform active:scale-95 shadow-lg shadow-yellow-500/20 mt-4"
-                        >
-                            {isSaved ? <CheckCircle size={20} /> : <Save size={20} />}
-                            {isSaved ? 'CONFIGURAÇÃO SALVA!' : 'ATIVAR MODO INFLUENCER'}
-                        </button>
+                        <span className="text-xs font-mono text-zinc-600 bg-zinc-950 px-2 py-1 rounded border border-zinc-800">
+                            {deposit.userEmail || 'Anônimo'}
+                        </span>
                     </div>
-                </div>
+                )) : (
+                    <div className="p-8 text-center text-zinc-500 text-sm">Nenhum depósito hoje.</div>
+                )}
             </div>
-        )}
+        </div>
 
-      </main>
+        {/* LISTA DE NOVOS USUÁRIOS */}
+        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden">
+            <div className="p-6 border-b border-zinc-800 flex justify-between items-center">
+                <h3 className="font-bold text-white flex items-center gap-2"><Users className="text-[#ffc700]" size={20}/> Novos Usuários ({stats.totalUsers})</h3>
+            </div>
+            <div className="divide-y divide-zinc-800">
+                {recentUsers.length > 0 ? recentUsers.map((user) => (
+                    <div key={user.id} className="p-4 flex justify-between items-center hover:bg-zinc-800/50 transition-colors">
+                        <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center text-xs font-bold text-[#ffc700]">
+                                {user.email ? user.email.substring(0,2).toUpperCase() : 'U'}
+                            </div>
+                            <div>
+                                <p className="text-white font-medium text-sm">{user.email || 'Sem e-mail'}</p>
+                                <p className="text-[10px] text-zinc-500">
+                                    Cadastrado em {user.createdAt ? new Date(user.createdAt.seconds * 1000).toLocaleDateString('pt-BR') : 'Data desconhecida'}
+                                </p>
+                            </div>
+                        </div>
+                        {user.balance > 0 && (
+                             <span className="text-xs font-bold text-green-500 bg-green-900/20 px-2 py-1 rounded">
+                                R$ {user.balance.toFixed(2)}
+                             </span>
+                        )}
+                    </div>
+                )) : (
+                    <div className="p-8 text-center text-zinc-500 text-sm">Nenhum usuário cadastrado.</div>
+                )}
+            </div>
+        </div>
+
+      </div>
     </div>
   );
-}
-
-function SidebarButton({ label, icon, active, onClick, highlight }: any) {
-    return (
-        <button 
-            onClick={onClick}
-            className={`w-full text-left px-4 py-3 rounded font-bold text-sm transition-all flex items-center gap-3 ${
-                active 
-                ? 'bg-zinc-700 text-white border-l-4 border-yellow-500 shadow-md' 
-                : 'bg-[#2a2a2a] text-zinc-400 hover:bg-[#333] hover:text-white'
-            } ${highlight ? 'ring-1 ring-yellow-500/50 text-yellow-500' : ''}`}
-        >
-            {icon}
-            <span className="flex-1">{label}</span>
-            {active && <div className="w-2 h-2 bg-yellow-500 rounded-full"></div>}
-        </button>
-    );
 }
