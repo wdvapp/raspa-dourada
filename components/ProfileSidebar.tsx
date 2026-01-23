@@ -1,9 +1,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { X, User as UserIcon, LogOut, Wallet, Landmark, Key, AlertTriangle, CheckCircle2, Loader2, ChevronRight, History, PiggyBank } from 'lucide-react';
+import { X, User as UserIcon, LogOut, PiggyBank, History, CheckCircle2, AlertTriangle, Loader2 } from 'lucide-react';
 import { db } from '../lib/firebase';
-import { doc, getDoc, collection, addDoc, query, where, orderBy, onSnapshot } from 'firebase/firestore';
+import { collection, query, where, orderBy, onSnapshot, runTransaction, doc, serverTimestamp } from 'firebase/firestore';
 
 interface ProfileSidebarProps {
     isOpen: boolean;
@@ -24,8 +24,7 @@ export default function ProfileSidebar({ isOpen, onClose, user, balance, onLogou
     const [withdrawMessage, setWithdrawMessage] = useState({ type: '', text: '' });
     const [withdrawHistory, setWithdrawHistory] = useState<any[]>([]);
 
-    // --- FUNÇÕES DE FORMATAÇÃO DE MOEDA ---
-
+    // Formatação de Moeda
     const formatDisplayAmount = (rawValue: string) => {
         if (!rawValue) return 'R$ 0,00';
         const numberValue = parseInt(rawValue, 10) / 100;
@@ -42,9 +41,7 @@ export default function ProfileSidebar({ isOpen, onClose, user, balance, onLogou
         return withdrawAmount ? parseInt(withdrawAmount, 10) / 100 : 0;
     };
 
-    // ---------------------------------------
-
-    // Carrega histórico de saques
+    // Carrega histórico
     useEffect(() => {
         if (user && activeTab === 'HISTORY') {
             const q = query(
@@ -59,41 +56,69 @@ export default function ProfileSidebar({ isOpen, onClose, user, balance, onLogou
         }
     }, [user, activeTab]);
 
+    // --- AQUI ESTÁ A CORREÇÃO CRÍTICA ---
     const handleWithdraw = async () => {
         setWithdrawMessage({ type: '', text: '' });
         const amountToWithdraw = getActualAmount();
 
-        // VALIDAÇÕES
+        // Validações Básicas
         if (!pixKey) return setWithdrawMessage({ type: 'error', text: 'Digite sua chave Pix.' });
-        if (amountToWithdraw <= 0) return setWithdrawMessage({ type: 'error', text: 'Digite um valor para sacar.' });
-        
-        // MUDANÇA: Mínimo agora é 50
-        if (amountToWithdraw < 50) return setWithdrawMessage({ type: 'error', text: 'O saque mínimo é de R$ 50,00.' });
-        
+        if (amountToWithdraw <= 0) return setWithdrawMessage({ type: 'error', text: 'Valor inválido.' });
+        if (amountToWithdraw < 10) return setWithdrawMessage({ type: 'error', text: 'Mínimo R$ 10,00.' }); // Ajuste conforme sua regra
         if (amountToWithdraw > balance) return setWithdrawMessage({ type: 'error', text: 'Saldo insuficiente.' });
 
         setLoadingWithdraw(true);
+
         try {
-            await addDoc(collection(db, 'withdrawals'), {
-                userId: user.uid,
-                userEmail: user.email,
-                amount: amountToWithdraw,
-                pixKeyType,
-                pixKey,
-                status: 'pending',
-                createdAt: Date.now()
+            // USANDO TRANSAÇÃO PARA GARANTIR SEGURANÇA
+            await runTransaction(db, async (transaction) => {
+                // 1. Ler o saldo atual do banco (para garantir que não mudou milésimos antes)
+                const userRef = doc(db, 'users', user.uid);
+                const userDoc = await transaction.get(userRef);
+
+                if (!userDoc.exists()) throw "Usuário não encontrado.";
+                
+                const currentBalance = userDoc.data().balance || 0;
+
+                // 2. Verificar saldo novamente dentro da transação
+                if (currentBalance < amountToWithdraw) {
+                    throw "Saldo insuficiente para realizar esta operação.";
+                }
+
+                // 3. Criar o documento de saque
+                const newWithdrawRef = doc(collection(db, 'withdrawals'));
+                transaction.set(newWithdrawRef, {
+                    userId: user.uid,
+                    userEmail: user.email,
+                    amount: amountToWithdraw,
+                    pixKeyType,
+                    pixKey,
+                    status: 'pending',
+                    createdAt: Date.now()
+                });
+
+                // 4. SUBTRAIR O VALOR DO SALDO IMEDIATAMENTE
+                transaction.update(userRef, {
+                    balance: currentBalance - amountToWithdraw
+                });
             });
-            // Mensagem de Sucesso Verde
-            setWithdrawMessage({ type: 'success', text: 'Solicitação enviada com sucesso!' });
+
+            // Sucesso
+            setWithdrawMessage({ type: 'success', text: 'Solicitação enviada! Valor descontado.' });
             setWithdrawAmount('');
             setPixKey('');
+            
+            // Redireciona para o histórico após 2 segundos
             setTimeout(() => {
                 setWithdrawMessage({ type: '', text: '' });
                 setActiveTab('HISTORY');
-            }, 3000);
-        } catch (error) {
-            console.error(error);
-            setWithdrawMessage({ type: 'error', text: 'Erro ao solicitar. Tente novamente.' });
+            }, 2000);
+
+        } catch (error: any) {
+            console.error("Erro no saque:", error);
+            // Se for erro de string (nossos throws), mostra ele. Se não, erro genérico.
+            const msg = typeof error === 'string' ? error : 'Erro ao processar. Tente novamente.';
+            setWithdrawMessage({ type: 'error', text: msg });
         } finally {
             setLoadingWithdraw(false);
         }
@@ -110,10 +135,8 @@ export default function ProfileSidebar({ isOpen, onClose, user, balance, onLogou
 
     return (
         <>
-            {/* Overlay */}
             <div className={`fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] transition-opacity duration-300 ${isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={onClose}></div>
 
-            {/* Sidebar */}
             <div className={`fixed inset-y-0 right-0 w-full md:w-[450px] bg-[#09090b] border-l border-white/10 z-[70] transform transition-transform duration-300 flex flex-col ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>
                 
                 {/* Header */}
@@ -168,8 +191,7 @@ export default function ProfileSidebar({ isOpen, onClose, user, balance, onLogou
                             <div className="bg-yellow-500/10 p-4 rounded-xl border border-yellow-500/20 flex gap-3">
                                 <AlertTriangle className="text-yellow-500 flex-shrink-0" size={20} />
                                 <p className="text-xs text-yellow-200/80 leading-relaxed">
-                                    {/* MUDANÇA: Texto atualizado para R$ 50,00 */}
-                                    Saques processados em até 24h. Mínimo de <b>R$ 50,00</b>.
+                                    Saques processados em até 24h. O valor é descontado do seu saldo imediatamente.
                                 </p>
                             </div>
                             
@@ -177,7 +199,6 @@ export default function ProfileSidebar({ isOpen, onClose, user, balance, onLogou
                                 <div>
                                     <label className="text-xs text-zinc-500 font-bold uppercase mb-2 block">Tipo de Chave</label>
                                     <div className="grid grid-cols-4 gap-2">
-                                        {/* MUDANÇA: RAND agora é ALEATÓRIA */}
                                         {['CPF', 'EMAIL', 'TELEFONE', 'ALEATORIA'].map(type => (
                                             <button key={type} onClick={() => setPixKeyType(type as any)} className={`text-[10px] font-bold py-2 rounded border transition-all ${pixKeyType === type ? 'bg-[#ffc700] text-black border-[#ffc700]' : 'bg-zinc-950 text-zinc-500 border-zinc-800'}`}>
                                                 {type === 'ALEATORIA' ? 'ALEATÓRIA' : type}
@@ -216,7 +237,6 @@ export default function ProfileSidebar({ isOpen, onClose, user, balance, onLogou
                                     </div>
                                 )}
 
-                                {/* MUDANÇA: Removi a trava que desabilitava o botão por saldo */}
                                 <button disabled={loadingWithdraw} onClick={handleWithdraw} className="w-full bg-[#ffc700] hover:bg-[#e6b300] disabled:opacity-50 text-black font-black py-4 rounded-xl text-sm shadow-lg flex items-center justify-center gap-2 transition-all active:scale-95 uppercase tracking-wide">
                                     {loadingWithdraw ? <Loader2 className="animate-spin" size={18} /> : <PiggyBank size={18} />}
                                     CONFIRMAR SAQUE
@@ -231,7 +251,7 @@ export default function ProfileSidebar({ isOpen, onClose, user, balance, onLogou
                                 withdrawHistory.map(item => (
                                     <div key={item.id} className="bg-zinc-900 p-4 rounded-xl border border-zinc-800 flex justify-between items-center">
                                         <div>
-                                            <span className="text-sm font-bold text-white block">R$ {item.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                                            <span className="text-sm font-bold text-white block">R$ {Number(item.amount).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
                                             <span className="text-[10px] text-zinc-500 uppercase">{item.pixKeyType === 'ALEATORIA' ? 'ALEATÓRIA' : item.pixKeyType} • {new Date(item.createdAt).toLocaleDateString('pt-BR')}</span>
                                         </div>
                                         {getStatusBadge(item.status)}
