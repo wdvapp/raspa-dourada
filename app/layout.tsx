@@ -1,20 +1,26 @@
-import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import type { Metadata, Viewport } from "next";
+import { Inter } from "next/font/google";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
+const inter = Inter({ subsets: ["latin"] });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
-
+// --- CONFIGURAÇÃO PWA ---
 export const metadata: Metadata = {
   title: "Raspa Dourada",
-  description: "Ache 3 iguais e ganhe!",
+  description: "A melhor raspadinha online do Brasil",
+  manifest: "/manifest.json", 
+  icons: {
+    icon: "/icon-192x192.png",
+    apple: "/icon-192x192.png", 
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#09090b",
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
 };
 
 export default function RootLayout({
@@ -23,12 +29,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
-        {children}
-      </body>
+    <html lang="pt-BR">
+      <head>
+        <link rel="apple-touch-icon" href="/icon-192x192.png" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+      </head>
+      <body className={inter.className}>{children}</body>
     </html>
   );
 }
