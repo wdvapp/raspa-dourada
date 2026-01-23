@@ -10,17 +10,16 @@ export async function POST(req: Request) {
     // 1. Recebe e Analisa o Body
     const body = await req.json();
     
-    // O pulo do gato: A Pixup manda dentro de 'requestBody'
+    // O pulo do gato: A Pixup manda dentro de 'requestBody' ou direto no body
     const data = body.requestBody || body;
     const { transactionId, status, external_id, amount } = data;
 
-    // 2. 🚨 GRAVA O LOG NO FIREBASE (Para a gente ver o que está chegando)
-    // Se isso aparecer no seu banco, a conexão Pixup -> Vercel está funcionando!
+    // 2. 🚨 GRAVA O LOG NO FIREBASE
     try {
         await addDoc(collection(db, 'webhook_logs'), {
             receivedAt: serverTimestamp(),
-            full_payload: body,      // O que chegou bruto
-            processed_data: data,    // O que a gente extraiu
+            full_payload: body,
+            processed_data: data,
             txid_buscado: transactionId,
             status_recebido: status,
             amount_recebido: amount
@@ -31,7 +30,7 @@ export async function POST(req: Request) {
 
     // 3. Validação
     if (!transactionId || !status) {
-        return NextResponse.json({ error: 'Dados incompletos (Verifique webhook_logs no Firebase)' }, { status: 400 });
+        return NextResponse.json({ error: 'Dados incompletos' }, { status: 400 });
     }
 
     // Aceita PAID, paid, APPROVED, etc.
@@ -65,25 +64,59 @@ export async function POST(req: Request) {
         return NextResponse.json({ message: 'Já estava pago' });
     }
 
-    // 5. Libera o Saldo
+    // 5. LIBERA O SALDO + BÔNUS (LÓGICA NOVA AQUI ⬇️)
+    let bonusApplied = 0;
+    const amountVal = Number(amount); // Garante que é numero
+
     if (depositData.userId && depositData.userId !== 'anonimo') {
         const userRef = doc(db, 'users', depositData.userId);
+        
+        // --- INÍCIO DA MÁGICA DO BÔNUS ---
+        const bonusConfigSnap = await getDoc(doc(db, 'config', 'bonus'));
+        const userSnap = await getDoc(userRef);
+        
+        let finalAmount = amountVal;
+
+        if (bonusConfigSnap.exists() && userSnap.exists()) {
+            const config = bonusConfigSnap.data();
+            const userData = userSnap.data();
+
+            // Verifica: Bônus Ativo? + Usuário nunca recebeu?
+            if (config.active && !userData.hasReceivedBonus) {
+                const minDep = Number(config.minDeposit) || 0;
+                
+                // Verifica depósito mínimo
+                if (amountVal >= minDep) {
+                    // Calcula Bônus
+                    bonusApplied = amountVal * (Number(config.percentage) / 100);
+                    finalAmount = amountVal + bonusApplied;
+                    
+                    console.log(`🤑 BÔNUS APLICADO: R$ ${bonusApplied} (${config.percentage}%)`);
+                }
+            }
+        }
+        // --- FIM DA MÁGICA ---
+
+        // Atualiza o usuário
         await updateDoc(userRef, {
-            balance: increment(Number(amount))
+            balance: increment(finalAmount), // Deposita Valor + Bônus
+            hasReceivedBonus: true,          // Marca que já usou o bônus de boas-vindas
+            totalDeposited: increment(amountVal) // Histórico do valor real
         });
     }
 
+    // Atualiza o documento do depósito
     await updateDoc(depositDoc.ref, {
         status: 'completed',
         paidAt: new Date(),
-        webhook_log: 'sucesso_espiao'
+        webhook_log: 'sucesso_com_bonus',
+        bonusGiven: bonusApplied // Salva no histórico do depósito quanto foi dado de bônus
     });
 
     return NextResponse.json({ success: true });
 
   } catch (error: any) {
     console.error("ERRO CRÍTICO:", error);
-    // Tenta salvar o erro no firebase também
     try {
         await addDoc(collection(db, 'webhook_logs'), { error: error.message, date: serverTimestamp() });
     } catch(e) {}
