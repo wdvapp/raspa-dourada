@@ -26,23 +26,18 @@ export default function ProfileSidebar({ isOpen, onClose, user, balance, onLogou
 
     // --- FUNÇÕES DE FORMATAÇÃO DE MOEDA ---
 
-    // Formata o valor bruto para exibir (R$ X,XX)
     const formatDisplayAmount = (rawValue: string) => {
         if (!rawValue) return 'R$ 0,00';
         const numberValue = parseInt(rawValue, 10) / 100;
         return numberValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
     };
 
-    // Lida com a digitação no campo de valor (USANDO 'any' PARA EVITAR ERRO)
     const handleAmountChange = (e: any) => {
-        // Remove tudo que não for dígito
         let value = e.target.value.replace(/\D/g, '');
-        // Remove zeros à esquerda desnecessários
         value = value.replace(/^0+/, '');
         setWithdrawAmount(value);
     };
 
-    // Pega o valor real em float para cálculos
     const getActualAmount = () => {
         return withdrawAmount ? parseInt(withdrawAmount, 10) / 100 : 0;
     };
@@ -68,11 +63,13 @@ export default function ProfileSidebar({ isOpen, onClose, user, balance, onLogou
         setWithdrawMessage({ type: '', text: '' });
         const amountToWithdraw = getActualAmount();
 
+        // VALIDAÇÕES
         if (!pixKey) return setWithdrawMessage({ type: 'error', text: 'Digite sua chave Pix.' });
         if (amountToWithdraw <= 0) return setWithdrawMessage({ type: 'error', text: 'Digite um valor para sacar.' });
         
-        // Regras de negócio
-        if (amountToWithdraw < 10) return setWithdrawMessage({ type: 'error', text: 'O saque mínimo é de R$ 10,00.' });
+        // MUDANÇA: Mínimo agora é 50
+        if (amountToWithdraw < 50) return setWithdrawMessage({ type: 'error', text: 'O saque mínimo é de R$ 50,00.' });
+        
         if (amountToWithdraw > balance) return setWithdrawMessage({ type: 'error', text: 'Saldo insuficiente.' });
 
         setLoadingWithdraw(true);
@@ -86,13 +83,14 @@ export default function ProfileSidebar({ isOpen, onClose, user, balance, onLogou
                 status: 'pending',
                 createdAt: Date.now()
             });
+            // Mensagem de Sucesso Verde
             setWithdrawMessage({ type: 'success', text: 'Solicitação enviada com sucesso!' });
             setWithdrawAmount('');
             setPixKey('');
             setTimeout(() => {
                 setWithdrawMessage({ type: '', text: '' });
                 setActiveTab('HISTORY');
-            }, 2000);
+            }, 3000);
         } catch (error) {
             console.error(error);
             setWithdrawMessage({ type: 'error', text: 'Erro ao solicitar. Tente novamente.' });
@@ -170,7 +168,8 @@ export default function ProfileSidebar({ isOpen, onClose, user, balance, onLogou
                             <div className="bg-yellow-500/10 p-4 rounded-xl border border-yellow-500/20 flex gap-3">
                                 <AlertTriangle className="text-yellow-500 flex-shrink-0" size={20} />
                                 <p className="text-xs text-yellow-200/80 leading-relaxed">
-                                    Saques processados em até 24h. Mínimo de <b>R$ 10,00</b>.
+                                    {/* MUDANÇA: Texto atualizado para R$ 50,00 */}
+                                    Saques processados em até 24h. Mínimo de <b>R$ 50,00</b>.
                                 </p>
                             </div>
                             
@@ -178,9 +177,10 @@ export default function ProfileSidebar({ isOpen, onClose, user, balance, onLogou
                                 <div>
                                     <label className="text-xs text-zinc-500 font-bold uppercase mb-2 block">Tipo de Chave</label>
                                     <div className="grid grid-cols-4 gap-2">
+                                        {/* MUDANÇA: RAND agora é ALEATÓRIA */}
                                         {['CPF', 'EMAIL', 'TELEFONE', 'ALEATORIA'].map(type => (
                                             <button key={type} onClick={() => setPixKeyType(type as any)} className={`text-[10px] font-bold py-2 rounded border transition-all ${pixKeyType === type ? 'bg-[#ffc700] text-black border-[#ffc700]' : 'bg-zinc-950 text-zinc-500 border-zinc-800'}`}>
-                                                {type === 'ALEATORIA' ? 'RAND' : type}
+                                                {type === 'ALEATORIA' ? 'ALEATÓRIA' : type}
                                             </button>
                                         ))}
                                     </div>
@@ -210,13 +210,14 @@ export default function ProfileSidebar({ isOpen, onClose, user, balance, onLogou
                                 </div>
 
                                 {withdrawMessage.text && (
-                                    <div className={`p-3 rounded-lg text-xs font-bold flex items-center gap-2 ${withdrawMessage.type === 'success' ? 'bg-green-500/20 text-green-500' : 'bg-red-500/20 text-red-500'}`}>
+                                    <div className={`p-3 rounded-lg text-xs font-bold flex items-center gap-2 animate-in fade-in slide-in-from-top-2 ${withdrawMessage.type === 'success' ? 'bg-green-500/20 text-green-500 border border-green-500/20' : 'bg-red-500/20 text-red-500 border border-red-500/20'}`}>
                                         {withdrawMessage.type === 'success' ? <CheckCircle2 size={16}/> : <AlertTriangle size={16}/>}
                                         {withdrawMessage.text}
                                     </div>
                                 )}
 
-                                <button disabled={loadingWithdraw || balance <= 0} onClick={handleWithdraw} className="w-full bg-[#ffc700] hover:bg-[#e6b300] disabled:opacity-50 text-black font-black py-4 rounded-xl text-sm shadow-lg flex items-center justify-center gap-2 transition-all active:scale-95 uppercase tracking-wide">
+                                {/* MUDANÇA: Removi a trava que desabilitava o botão por saldo */}
+                                <button disabled={loadingWithdraw} onClick={handleWithdraw} className="w-full bg-[#ffc700] hover:bg-[#e6b300] disabled:opacity-50 text-black font-black py-4 rounded-xl text-sm shadow-lg flex items-center justify-center gap-2 transition-all active:scale-95 uppercase tracking-wide">
                                     {loadingWithdraw ? <Loader2 className="animate-spin" size={18} /> : <PiggyBank size={18} />}
                                     CONFIRMAR SAQUE
                                 </button>
@@ -231,7 +232,7 @@ export default function ProfileSidebar({ isOpen, onClose, user, balance, onLogou
                                     <div key={item.id} className="bg-zinc-900 p-4 rounded-xl border border-zinc-800 flex justify-between items-center">
                                         <div>
                                             <span className="text-sm font-bold text-white block">R$ {item.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
-                                            <span className="text-[10px] text-zinc-500 uppercase">{item.pixKeyType} • {new Date(item.createdAt).toLocaleDateString('pt-BR')}</span>
+                                            <span className="text-[10px] text-zinc-500 uppercase">{item.pixKeyType === 'ALEATORIA' ? 'ALEATÓRIA' : item.pixKeyType} • {new Date(item.createdAt).toLocaleDateString('pt-BR')}</span>
                                         </div>
                                         {getStatusBadge(item.status)}
                                     </div>
