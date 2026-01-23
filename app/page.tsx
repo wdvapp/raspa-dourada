@@ -7,6 +7,7 @@ import { AuthModal } from '../components/AuthModal';
 import ProfileSidebar from '../components/ProfileSidebar';
 import PrizePreviewModal from '../components/PrizePreviewModal';
 import WinnersCarousel from '../components/WinnersCarousel';
+import InstallAppButton from '../components/InstallAppButton'; // <--- OLHA ELE AQUI NO TOPO
 import confetti from 'canvas-confetti';
 import { db, app } from '../lib/firebase';
 import { doc, getDoc, collection, getDocs, onSnapshot, updateDoc, increment } from 'firebase/firestore'; 
@@ -59,7 +60,7 @@ export default function Home() {
 
     const initData = async () => {
         try {
-            // Carrega Config (Só para Logo e Cores agora)
+            // Carrega Config
             const docRef = doc(db, 'config', 'layout');
             const docSnap = await getDoc(docRef);
             if (docSnap.exists()) setLayoutConfig(docSnap.data());
@@ -69,13 +70,9 @@ export default function Home() {
             const list = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Game[];
             setGamesList(list);
 
-            // --- CARREGA BANNERS DO PAINEL (TUDO JUNTO) ---
+            // --- CARREGA BANNERS DO PAINEL ---
             const winnersSnap = await getDocs(collection(db, 'winners'));
-            
-            // Ordena (opcional, aqui pega pela ordem que o Firebase devolve)
             const bannersList = winnersSnap.docs.map(doc => doc.data().image);
-            
-            // Define APENAS o que veio da coleção 'winners'
             setWinnerImages(bannersList);
 
         } catch (error) { console.error("Erro carregamento inicial", error); }
@@ -297,7 +294,7 @@ export default function Home() {
           /* --- VIEW: LOBBY (ORIGINAL) --- */
           <main className="px-4 pb-8">
             
-            {/* --- MURAL DE GANHADORES & BANNERS (Centralizado) --- */}
+            {/* --- MURAL DE GANHADORES & BANNERS --- */}
             <div className="w-full h-40 md:h-52 rounded-2xl relative overflow-hidden shadow-lg border border-zinc-800 mb-8 bg-zinc-900">
                <WinnersCarousel images={winnerImages} />
             </div>
@@ -342,16 +339,20 @@ export default function Home() {
         )}
 
         {/* MENU INFERIOR MOBILE (LIMPO) */}
-        <div className="fixed bottom-0 w-full bg-zinc-950/95 backdrop-blur-md border-t border-zinc-800 pb-6 pt-2 px-6 flex justify-between items-center z-50 h-20 shadow-2xl">
-          <button onClick={handleBackToLobby} className={`flex flex-col items-center gap-1 ${view === 'LOBBY' ? '' : 'text-zinc-500'}`} style={view === 'LOBBY' ? { color: layoutConfig.color } : {}}><HomeIcon size={24} strokeWidth={view === 'LOBBY' ? 3 : 2} /><span className="text-[10px] font-medium">Início</span></button>
+        <div className="fixed bottom-0 w-full bg-zinc-950/95 backdrop-blur-md border-t border-zinc-800 pb-6 pt-2 px-4 flex justify-between items-center z-50 h-20 shadow-2xl">
+          <button onClick={handleBackToLobby} className={`flex flex-col items-center gap-1 mb-2 ${view === 'LOBBY' ? '' : 'text-zinc-500'}`} style={view === 'LOBBY' ? { color: layoutConfig.color } : {}}><HomeIcon size={24} strokeWidth={view === 'LOBBY' ? 3 : 2} /><span className="text-[10px] font-medium">Início</span></button>
           
           {/* Botão Jogar/Menu */}
-          <button onClick={() => !user ? setIsAuthOpen(true) : null} className={`flex flex-col items-center gap-1 ${view === 'GAME' ? '' : 'text-zinc-500'}`} style={view === 'GAME' ? { color: layoutConfig.color } : {}}><Grid size={24} strokeWidth={view === 'GAME' ? 3 : 2} /><span className="text-[10px] font-medium">Jogar</span></button>
+          <button onClick={() => !user ? setIsAuthOpen(true) : null} className={`flex flex-col items-center gap-1 mb-2 ${view === 'GAME' ? '' : 'text-zinc-500'}`} style={view === 'GAME' ? { color: layoutConfig.color } : {}}><Grid size={24} strokeWidth={view === 'GAME' ? 3 : 2} /><span className="text-[10px] font-medium">Jogar</span></button>
           
-          <div className="relative -top-6"><button onClick={handleOpenDeposit} className="text-black p-4 rounded-full transition-transform active:scale-95 border-4 border-zinc-950" style={{ backgroundColor: layoutConfig.color, boxShadow: `0 0 20px ${layoutConfig.color}66` }}><PlusCircle size={32} strokeWidth={2.5} /></button></div>
+          <div className="relative -top-5"><button onClick={handleOpenDeposit} className="text-black p-4 rounded-full transition-transform active:scale-95 border-4 border-zinc-950" style={{ backgroundColor: layoutConfig.color, boxShadow: `0 0 20px ${layoutConfig.color}66` }}><PlusCircle size={32} strokeWidth={2.5} /></button></div>
           
-          <button className="flex flex-col items-center gap-1 text-zinc-500"><Trophy size={24} /><span className="text-[10px] font-medium">Ganhadores</span></button>
-          <button onClick={() => user ? setIsProfileOpen(true) : setIsAuthOpen(true)} className={`flex flex-col items-center gap-1 ${isProfileOpen ? 'text-white' : 'text-zinc-500'}`}><User size={24} /><span className="text-[10px] font-medium">Perfil</span></button>
+          {/* --- BOTÃO DE BAIXAR APP --- */}
+          <div className="mb-1">
+             <InstallAppButton />
+          </div>
+
+          <button onClick={() => user ? setIsProfileOpen(true) : setIsAuthOpen(true)} className={`flex flex-col items-center gap-1 mb-2 ${isProfileOpen ? 'text-white' : 'text-zinc-500'}`}><User size={24} /><span className="text-[10px] font-medium">Perfil</span></button>
         </div>
       </div>
 
