@@ -18,7 +18,7 @@ export default function DepositModal({ isOpen, onClose, userEmail, userId }: Dep
   const [loading, setLoading] = useState(false);
   const [depositData, setDepositData] = useState<any>(null);
 
-  // Reseta o modal quando fecha
+  // Limpa estados ao fechar
   useEffect(() => {
     if (!isOpen) {
       setStep(1);
@@ -28,20 +28,17 @@ export default function DepositModal({ isOpen, onClose, userEmail, userId }: Dep
     }
   }, [isOpen]);
 
-  // --- O CÓDIGO MÁGICO ESTÁ AQUI ---
-  // Isso monitora o pagamento em tempo real. Se o status mudar, ele fecha sozinho.
+  // --- SENSOR AUTOMÁTICO DE PAGAMENTO ---
   useEffect(() => {
     if (isOpen && step === 2 && depositData?.id) {
         const depositRef = doc(db, 'deposits', depositData.id);
-        
-        // Listener em tempo real (Espião)
+        // Fica ouvindo o banco de dados em tempo real
         const unsubscribe = onSnapshot(depositRef, (docSnap) => {
             if (docSnap.exists()) {
                 const data = docSnap.data();
-                // Se o pagamento for confirmado, fecha o modal
+                // Se pagou, fecha o modal sozinho
                 if (data.status === 'completed' || data.status === 'paid') {
-                    onClose(); 
-                    // O saldo atualiza sozinho na home
+                    onClose();
                 }
             }
         });
@@ -59,6 +56,10 @@ export default function DepositModal({ isOpen, onClose, userEmail, userId }: Dep
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ amount: parseFloat(amount), email: userEmail, userId: userId })
       });
+      
+      // Se a API não existir (erro 404) ou der erro 500, o JSON falha
+      if (!response.ok) throw new Error("Falha na comunicação com a API");
+
       const data = await response.json();
 
       if (data.qrcode && data.id) {
@@ -69,7 +70,7 @@ export default function DepositModal({ isOpen, onClose, userEmail, userId }: Dep
       }
     } catch (error) {
       console.error(error);
-      alert('Erro de conexão.');
+      alert('Erro de conexão. Verifique se a API subiu corretamente.');
     } finally {
       setLoading(false);
     }
@@ -128,7 +129,7 @@ export default function DepositModal({ isOpen, onClose, userEmail, userId }: Dep
                 <button onClick={copyToClipboard} className="bg-zinc-800 hover:bg-zinc-700 text-white p-3 rounded-lg transition-colors"><Copy size={16} /></button>
             </div>
             
-            {/* SEM BOTÃO MANUAL, APENAS O LOADING */}
+            {/* SEM BOTÃO MANUAL, APENAS AVISO */}
             <div className="flex flex-col items-center justify-center gap-2 py-4 bg-zinc-900/30 rounded-xl border border-zinc-800 border-dashed animate-pulse">
                 <div className="flex items-center gap-2 text-[#ffc700] font-bold text-sm"><Loader2 className="animate-spin" size={18} /> Aguardando confirmação...</div>
                 <p className="text-[10px] text-zinc-600">O sistema detectará o pagamento automaticamente.</p>
