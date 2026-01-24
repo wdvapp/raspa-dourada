@@ -8,7 +8,6 @@ import ProfileSidebar from '../components/ProfileSidebar';
 import NotificationManager from '../components/NotificationManager';
 import confetti from 'canvas-confetti';
 import { db, app } from '../lib/firebase';
-// --- MUDANÇA 1: Adicionei 'addDoc' na lista de imports abaixo ---
 import { doc, getDoc, collection, getDocs, onSnapshot, updateDoc, increment, serverTimestamp, query, orderBy, addDoc } from 'firebase/firestore'; 
 import { getAuth, onAuthStateChanged, signOut } from 'firebase/auth';
 import {
@@ -48,6 +47,7 @@ interface NotificationMsg {
     body: string;
     read: boolean;
     createdAt: any;
+    isGlobal?: boolean;
 }
 
 export default function Home() {
@@ -71,7 +71,8 @@ export default function Home() {
   // --- NOTIFICAÇÕES ---
   const [notifications, setNotifications] = useState<NotificationMsg[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
-  const unreadCount = notifications.filter(n => !n.read).length;
+  // Conta apenas as não lidas (lógica simplificada: conta total por enquanto)
+  const unreadCount = notifications.length; 
 
   // --- POPUPS ---
   const [previewGame, setPreviewGame] = useState<Game | null>(null);
@@ -120,7 +121,8 @@ export default function Home() {
 
     const auth = getAuth(app);
     let unsubscribeSnapshot: any = null;
-    let unsubscribeNotifs: any = null;
+    let unsubscribePersonalNotifs: any = null;
+    let unsubscribeGlobalNotifs: any = null;
 
     const initData = async () => {
         try {
@@ -129,7 +131,7 @@ export default function Home() {
             const docSnap = await getDoc(docRef);
             if (docSnap.exists()) setLayoutConfig(docSnap.data());
 
-            // 2. CONFIGURAÇÃO DO PRESENTE DIÁRIO
+            // 2. Configurações de Marketing (Bônus)
             const giftRef = doc(db, 'config', 'daily_gift');
             onSnapshot(giftRef, (snap) => {
                 if(snap.exists()) {
@@ -169,32 +171,63 @@ export default function Home() {
             }
         });
 
-        // Ouvir Notificações
-        const notifQuery = query(collection(db, 'users', currentUser.uid, 'notifications'), orderBy('createdAt', 'desc'));
-        unsubscribeNotifs = onSnapshot(notifQuery, (snapshot) => {
-            const msgs = snapshot.docs.map(d => ({ id: d.id, ...d.data() })) as NotificationMsg[];
-            setNotifications(msgs);
+        // --- SISTEMA DE NOTIFICAÇÕES UNIFICADO (PESSOAL + MARKETING) ---
+        let personalMsgs: NotificationMsg[] = [];
+        let globalMsgs: NotificationMsg[] = [];
+
+        const updateNotifications = () => {
+            // Junta as duas listas e ordena por data (mais recente primeiro)
+            const all = [...personalMsgs, ...globalMsgs].sort((a, b) => {
+                const dateA = a.createdAt?.seconds || 0;
+                const dateB = b.createdAt?.seconds || 0;
+                return dateB - dateA;
+            });
+            setNotifications(all);
+        };
+
+        // 1. Ouvir Notificações PESSOAIS
+        const qPersonal = query(collection(db, 'users', currentUser.uid, 'notifications'), orderBy('createdAt', 'desc'));
+        unsubscribePersonalNotifs = onSnapshot(qPersonal, (snapshot) => {
+            personalMsgs = snapshot.docs.map(d => ({ 
+                id: d.id, 
+                ...d.data(),
+                isGlobal: false 
+            })) as NotificationMsg[];
+            updateNotifications();
+        });
+
+        // 2. Ouvir Notificações GLOBAIS (Marketing do Admin)
+        const qGlobal = query(collection(db, 'global_notifications'), orderBy('createdAt', 'desc'));
+        unsubscribeGlobalNotifs = onSnapshot(qGlobal, (snapshot) => {
+            globalMsgs = snapshot.docs.map(d => ({ 
+                id: d.id, 
+                ...d.data(),
+                isGlobal: true 
+            })) as NotificationMsg[];
+            updateNotifications();
         });
 
       } else {
         setBalance(0);
         setIsAuthOpen(true);
         if (unsubscribeSnapshot) unsubscribeSnapshot();
-        if (unsubscribeNotifs) unsubscribeNotifs();
+        if (unsubscribePersonalNotifs) unsubscribePersonalNotifs();
+        if (unsubscribeGlobalNotifs) unsubscribeGlobalNotifs();
       }
     });
 
     return () => {
         unsubscribeAuth();
         if (unsubscribeSnapshot) unsubscribeSnapshot();
-        if (unsubscribeNotifs) unsubscribeNotifs();
+        if (unsubscribePersonalNotifs) unsubscribePersonalNotifs();
+        if (unsubscribeGlobalNotifs) unsubscribeGlobalNotifs();
     };
   }, []);
 
   // --- LÓGICA DO BÔNUS DIÁRIO ---
   const checkBonusAvailability = (lastBonusTimestamp: any) => {
       if (!lastBonusTimestamp) {
-          setBonusAvailable(true); // Nunca pegou
+          setBonusAvailable(true); 
           return;
       }
       
@@ -204,7 +237,7 @@ export default function Home() {
       const hours24 = 24 * 60 * 60 * 1000;
 
       if (diffMs >= hours24) {
-          setBonusAvailable(true); // Já passou 24h
+          setBonusAvailable(true); 
       } else {
           setBonusAvailable(false);
           const remaining = hours24 - diffMs;
@@ -214,7 +247,6 @@ export default function Home() {
       }
   };
 
-  // --- MUDANÇA 2: Função Atualizada para Criar Notificação no Sininho ---
   const claimDailyBonus = async () => {
       if (!user || !bonusAvailable || !dailyGiftConfig.active) return;
       setClaimingBonus(true);
@@ -222,13 +254,13 @@ export default function Home() {
       try {
           const userRef = doc(db, 'users', user.uid);
           
-          // 1. Dá o dinheiro
+          // 1. Dá o dinheiro e marca data
           await updateDoc(userRef, {
               balance: increment(dailyGiftConfig.amount), 
               lastDailyBonus: serverTimestamp()
           });
 
-          // 2. CRIA A NOTIFICAÇÃO NO BANCO (Isso faz o sininho acender)
+          // 2. CRIA NOTIFICAÇÃO PESSOAL (Aparece no sininho)
           await addDoc(collection(db, 'users', user.uid, 'notifications'), {
               title: '🎁 Bônus Resgatado!',
               body: `Você recebeu ${formatCurrency(dailyGiftConfig.amount)} de presente diário. Aproveite!`,
@@ -237,7 +269,6 @@ export default function Home() {
           });
           
           triggerWin(); 
-          // O alerta visual continua, mas agora tem o registro no sino também
           setShowMysteryBox(false);
       } catch (error) {
           console.error(error);
@@ -394,7 +425,7 @@ export default function Home() {
           </div>
 
           <div className="flex items-center gap-3">
-            {/* NOTIFICAÇÕES (Conectado ao DB) */}
+            {/* NOTIFICAÇÕES (HÍBRIDAS: Pessoais + Marketing) */}
             <div className="relative">
                 <button onClick={() => setShowNotifications(!showNotifications)} className="bg-zinc-800 p-2 rounded-full text-zinc-400 hover:text-white relative">
                     <Bell size={20} />
@@ -409,8 +440,11 @@ export default function Home() {
                         <div className="max-h-64 overflow-y-auto">
                             {notifications.length > 0 ? (
                                 notifications.map(n => (
-                                    <div key={n.id} className="p-3 border-b border-zinc-800/50 hover:bg-zinc-800/50">
-                                        <p className="text-xs font-bold text-white mb-1">{n.title}</p>
+                                    <div key={n.id} className={`p-3 border-b border-zinc-800/50 hover:bg-zinc-800/50 ${n.isGlobal ? 'bg-purple-900/10' : ''}`}>
+                                        <div className="flex justify-between items-start mb-1">
+                                            <p className="text-xs font-bold text-white">{n.title}</p>
+                                            {n.isGlobal && <span className="text-[9px] bg-purple-500 text-white px-1 rounded">AVISO</span>}
+                                        </div>
                                         <p className="text-[10px] text-zinc-400 leading-relaxed">{n.body}</p>
                                     </div>
                                 ))
