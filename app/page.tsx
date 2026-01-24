@@ -31,12 +31,13 @@ interface Game {
   prizes: Prize[];
 }
 
-interface Banner {
+// Interface atualizada para ler sua coleção 'winners' existente
+interface Winner {
   id: string;
-  image?: string;
-  url?: string;     // Caso no banco esteja salvo como 'url'
-  photo?: string;   // Caso no banco esteja salvo como 'photo'
-  link?: string;
+  image?: string; // O base64 que você já tem
+  name?: string;  // Futuro
+  city?: string;  // Futuro
+  amount?: number; // Futuro
 }
 
 export default function Home() {
@@ -45,7 +46,7 @@ export default function Home() {
   const [balance, setBalance] = useState(0); 
   const [view, setView] = useState<'LOBBY' | 'GAME' | 'WINNERS'>('LOBBY');
   const [gamesList, setGamesList] = useState<Game[]>([]);
-  const [bannersList, setBannersList] = useState<Banner[]>([]); 
+  const [winnersList, setWinnersList] = useState<Winner[]>([]); // Lista de Ganhadores
   const [activeGame, setActiveGame] = useState<any>(null);
   const [prizesGrid, setPrizesGrid] = useState<Prize[]>([]); 
   const [loading, setLoading] = useState(false);
@@ -106,11 +107,10 @@ export default function Home() {
             const list = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Game[];
             setGamesList(list);
 
-            // 3. Banners (Ganhadores)
-            const bannersSnapshot = await getDocs(collection(db, 'banners'));
-            const bList = bannersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Banner[];
-            console.log("Banners carregados:", bList); // Para debug no console
-            setBannersList(bList);
+            // 3. Ganhadores (Conectando na coleção 'winners' que você mostrou no print)
+            const winnersSnapshot = await getDocs(collection(db, 'winners'));
+            const wList = winnersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Winner[];
+            setWinnersList(wList);
 
         } catch (error) {
             console.error("Erro carregamento inicial", error);
@@ -344,7 +344,7 @@ export default function Home() {
 
         <div className="h-20"></div>
 
-        {/* --- TELA DE GANHADORES (PUXA DO BANCO DE DADOS) --- */}
+        {/* --- TELA DE GANHADORES (CONECTADA AO DB) --- */}
         {view === 'WINNERS' && (
              <main className="px-4 pb-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
                  <div className="text-center mb-8 mt-4">
@@ -352,23 +352,27 @@ export default function Home() {
                      <p className="text-zinc-500 text-xs mt-1">Veja quem já faturou alto hoje!</p>
                  </div>
                  <div className="flex flex-col gap-6">
-                     {/* RENDERIZAÇÃO DOS BANNERS REAIS */}
-                     {bannersList.length > 0 ? (
-                        bannersList.map((banner, index) => {
-                             // Tenta pegar a imagem de qualquer campo comum (image, url, photo)
-                             const imgUrl = banner.image || banner.url || banner.photo;
-                             
-                             if (!imgUrl) return null; // Se não tem link, não mostra nada
-
-                             return (
-                                 <div key={index} className="rounded-2xl overflow-hidden border border-zinc-800 shadow-2xl relative">
-                                     <img src={imgUrl} className="w-full h-auto object-cover" alt="Ganhador" /> 
-                                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent flex flex-col justify-end p-4">
-                                         <p className="text-white font-bold text-sm">Ganhador Verificado</p>
-                                     </div>
-                                 </div>
-                             );
-                        })
+                     {winnersList.length > 0 ? (
+                        winnersList.map((winner, index) => (
+                             <div key={index} className="rounded-2xl overflow-hidden border border-zinc-800 shadow-2xl relative bg-zinc-900">
+                                 {/* Lógica Inteligente: Se tem imagem, mostra. Se tem dados profissionais, mostra card */}
+                                 {winner.image ? (
+                                     <>
+                                        <img src={winner.image} className="w-full h-auto object-cover" alt="Ganhador" />
+                                        {/* Se tiver nome e valor (futuro), mostra overlay. Se não, só imagem */}
+                                        {(winner.name || winner.amount) && (
+                                            <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent flex flex-col justify-end p-6">
+                                                <p className="text-yellow-500 font-black text-xl">{winner.amount ? formatCurrency(winner.amount) : ''}</p>
+                                                <p className="text-white font-bold">{winner.name}</p>
+                                                <p className="text-zinc-400 text-xs">{winner.city}</p>
+                                            </div>
+                                        )}
+                                     </>
+                                 ) : (
+                                     <div className="h-40 flex items-center justify-center text-zinc-500">Erro na imagem</div>
+                                 )}
+                             </div>
+                        ))
                      ) : (
                         <div className="text-center py-20 text-zinc-500 border border-zinc-800 rounded-2xl border-dashed">
                              <Trophy size={48} className="mx-auto mb-4 opacity-30" />
@@ -471,36 +475,36 @@ export default function Home() {
           </main>
         )}
 
-        {/* --- MENU INFERIOR (AGORA COM GRID DE 5 COLUNAS = ALINHAMENTO PERFEITO) --- */}
-        <div className="fixed bottom-0 w-full bg-zinc-950/95 backdrop-blur-md border-t border-zinc-800 pb-6 pt-2 px-2 z-50 h-20 shadow-2xl grid grid-cols-5 items-end">
+        {/* --- MENU INFERIOR (GRID 5 COLUNAS - CENTRALIZAÇÃO MATEMÁTICA) --- */}
+        <div className="fixed bottom-0 w-full bg-zinc-950/95 backdrop-blur-md border-t border-zinc-800 pb-2 pt-2 px-0 z-50 h-[80px] grid grid-cols-5 items-center">
           
           {/* 1. INÍCIO */}
-          <button onClick={handleBackToLobby} className={`flex flex-col items-center gap-1 mb-2 ${view === 'LOBBY' ? '' : 'text-zinc-500'}`} style={view === 'LOBBY' ? { color: layoutConfig.color } : {}}>
+          <button onClick={handleBackToLobby} className={`flex flex-col items-center justify-center gap-1 h-full ${view === 'LOBBY' ? '' : 'text-zinc-500'}`} style={view === 'LOBBY' ? { color: layoutConfig.color } : {}}>
               <HomeIcon size={24} strokeWidth={view === 'LOBBY' ? 3 : 2} />
               <span className="text-[10px] font-medium">Início</span>
           </button>
 
-          {/* 2. SURPRESA (AGORA IGUAL AOS OUTROS) */}
-          <button onClick={() => setShowMysteryBox(true)} className={`flex flex-col items-center gap-1 mb-2 ${showMysteryBox ? 'text-white' : 'text-zinc-500'}`}>
+          {/* 2. SURPRESA */}
+          <button onClick={() => setShowMysteryBox(true)} className={`flex flex-col items-center justify-center gap-1 h-full ${showMysteryBox ? 'text-white' : 'text-zinc-500'}`}>
               <Gift size={24} />
               <span className="text-[10px] font-medium">Surpresa</span>
           </button>
 
-          {/* 3. BOTÃO CENTRAL (FLOAT) */}
-          <div className="flex justify-center relative h-full">
-              <button onClick={handleOpenDeposit} className="absolute -top-6 text-black p-4 rounded-full transition-transform active:scale-95 border-4 border-zinc-950 shadow-xl" style={{ backgroundColor: layoutConfig.color, boxShadow: `0 0 20px ${layoutConfig.color}66` }}>
+          {/* 3. BOTÃO CENTRAL (FLOAT) - COLUNA DO MEIO */}
+          <div className="relative h-full flex items-center justify-center">
+              <button onClick={handleOpenDeposit} className="absolute -top-8 text-black p-4 rounded-full transition-transform active:scale-95 border-4 border-zinc-950 shadow-xl" style={{ backgroundColor: layoutConfig.color, boxShadow: `0 0 20px ${layoutConfig.color}66` }}>
                   <PlusCircle size={32} strokeWidth={2.5} />
               </button>
           </div>
           
           {/* 4. GANHADORES */}
-          <button onClick={handleGoToWinners} className={`flex flex-col items-center gap-1 mb-2 ${view === 'WINNERS' ? 'text-white' : 'text-zinc-500'}`}>
+          <button onClick={handleGoToWinners} className={`flex flex-col items-center justify-center gap-1 h-full ${view === 'WINNERS' ? 'text-white' : 'text-zinc-500'}`}>
               <Trophy size={24} />
               <span className="text-[10px] font-medium">Ganhadores</span>
           </button>
 
           {/* 5. PERFIL */}
-          <button onClick={() => user ? setIsProfileOpen(true) : setIsAuthOpen(true)} className={`flex flex-col items-center gap-1 mb-2 ${isProfileOpen ? 'text-white' : 'text-zinc-500'}`}>
+          <button onClick={() => user ? setIsProfileOpen(true) : setIsAuthOpen(true)} className={`flex flex-col items-center justify-center gap-1 h-full ${isProfileOpen ? 'text-white' : 'text-zinc-500'}`}>
               <User size={24} />
               <span className="text-[10px] font-medium">Perfil</span>
           </button>
