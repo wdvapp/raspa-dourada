@@ -1,137 +1,130 @@
 'use client';
 
-import { useState } from 'react';
-import { X, Copy, Check, Loader2, DollarSign, RefreshCw } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { X, Copy, Loader2, QrCode } from 'lucide-react';
+import { db } from '../lib/firebase';
+import { doc, onSnapshot } from 'firebase/firestore';
 
 interface DepositModalProps {
   isOpen: boolean;
   onClose: () => void;
-  userId?: string;
-  userEmail?: string;
+  userEmail: string;
+  userId: string;
 }
 
-export default function DepositModal({ isOpen, onClose, userId, userEmail }: DepositModalProps) {
-  const [amount, setAmount] = useState<number | string>('');
+export default function DepositModal({ isOpen, onClose, userEmail, userId }: DepositModalProps) {
+  const [step, setStep] = useState(1);
+  const [amount, setAmount] = useState('');
   const [loading, setLoading] = useState(false);
-  const [qrCode, setQrCode] = useState<string | null>(null);
-  const [copyCode, setCopyCode] = useState<string | null>(null);
-  const [txid, setTxid] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
-  const [error, setError] = useState('');
-  const [successMsg, setSuccessMsg] = useState('');
+  const [depositData, setDepositData] = useState<any>(null);
 
-  const handleDeposit = async () => {
-    if (!amount || Number(amount) < 1) { setError('Mínimo de R$ 1,00'); return; }
-    setLoading(true); setError('');
-    try {
-        const response = await fetch('/api/deposit', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ amount: Number(amount), userId: userId || 'anonimo', email: userEmail || 'sem_email' }) 
+  useEffect(() => {
+    if (!isOpen) {
+      setStep(1);
+      setAmount('');
+      setDepositData(null);
+      setLoading(false);
+    }
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (isOpen && step === 2 && depositData?.id) {
+        const depositRef = doc(db, 'deposits', depositData.id);
+        const unsubscribe = onSnapshot(depositRef, (docSnap) => {
+            if (docSnap.exists()) {
+                const data = docSnap.data();
+                if (data.status === 'completed' || data.status === 'paid') {
+                    onClose();
+                }
+            }
         });
-        const data = await response.json();
-        if (response.ok) {
-            setQrCode(data.qrcode_image);
-            setCopyCode(data.qrcode_text);
-            setTxid(data.txid);
-        } else {
-            setError('Erro ao gerar Pix. Tente novamente.');
-        }
-    } catch (e) { setError('Erro de conexão.'); } finally { setLoading(false); }
-  };
+        return () => unsubscribe();
+    }
+  }, [isOpen, step, depositData, onClose]);
 
-  const handleCheckPayment = async () => {
-      if (!txid) return;
-      setLoading(true);
-      setError('');
-      try {
-          const response = await fetch('/api/check-payment', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ txid })
-          });
-          
-          const data = await response.json();
-          
-          // --- MUDANÇA AQUI: Alerta o erro técnico na tela ---
-          if (!response.ok) {
-              alert(`ERRO TÉCNICO PIXUP:\n${JSON.stringify(data, null, 2)}`);
-              setError('Erro na consulta. Me mande o print do alerta!');
-              return;
-          }
+  const handleGeneratePix = async () => {
+    if (!amount || Number(amount) < 1) return alert("Valor mínimo R$ 1,00");
+    setLoading(true);
 
-          if (data.status === 'PAID') {
-              setSuccessMsg('Pagamento confirmado! Atualizando...');
-              setTimeout(() => {
-                  window.location.reload();
-              }, 2000);
-          } else {
-              setError(`Status atual: ${data.message || 'Pendente'}. Aguarde mais um pouco.`);
-          }
-      } catch (e: any) {
-          alert("ERRO NO SITE: " + e.message);
-      } finally {
-          setLoading(false);
+    try {
+      const response = await fetch('/api/pixup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amount: parseFloat(amount), email: userEmail, userId: userId })
+      });
+      const data = await response.json();
+
+      if (data.qrcode && data.id) {
+        setDepositData(data);
+        setStep(2);
+      } else {
+        alert('Erro ao gerar Pix.');
       }
+    } catch (error) {
+      console.error(error);
+      alert('Erro de conexão.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const copyToClipboard = () => {
-    if (copyCode) { navigator.clipboard.writeText(copyCode); setCopied(true); setTimeout(() => setCopied(false), 2000); }
+    if (depositData?.copypaste) {
+      navigator.clipboard.writeText(depositData.copypaste);
+      alert('Copiado!');
+    }
   };
-
-  const handleClose = () => { setQrCode(null); setCopyCode(null); setAmount(''); setError(''); setSuccessMsg(''); onClose(); }
 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-in fade-in duration-200">
-      <div className="bg-zinc-900 w-full max-w-sm rounded-3xl p-6 border border-zinc-800 relative shadow-2xl">
-        <button onClick={handleClose} className="absolute top-4 right-4 text-zinc-500 hover:text-white p-2"><X size={20} /></button>
+    <div className="fixed inset-0 z-[999] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-300">
+      <div className="bg-[#09090b] w-full max-w-md rounded-3xl border border-zinc-800 overflow-hidden shadow-2xl relative">
+        <button onClick={onClose} className="absolute top-4 right-4 p-2 bg-zinc-900/50 hover:bg-zinc-800 rounded-full text-zinc-400 hover:text-white transition-colors z-10"><X size={20} /></button>
 
-        <div className="text-center mb-6">
-            <h2 className="text-xl font-black text-white italic uppercase flex items-center justify-center gap-2">DEPOSITAR <span className="text-yellow-500">PIX</span></h2>
-            {userEmail && <p className="text-xs text-zinc-500 mt-1">{userEmail}</p>}
-        </div>
-
-        {!qrCode ? (
-            <>
-                <p className="text-zinc-400 text-sm mb-4 text-center">Escolha um valor:</p>
-                <div className="grid grid-cols-3 gap-3 mb-6">
-                    {[10, 20, 30, 50, 100, 200].map((val) => (
-                        <button key={val} onClick={() => setAmount(val)} className={`py-3 rounded-xl font-bold text-sm transition-all ${amount === val ? 'bg-yellow-500 text-black shadow-lg scale-105' : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'}`}>R$ {val}</button>
-                    ))}
-                </div>
-                <div className="relative mb-6">
-                    <DollarSign className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />
-                    <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="Outro valor..." className="w-full bg-black border border-zinc-800 rounded-xl py-4 pl-12 pr-4 text-white font-bold focus:outline-none focus:border-yellow-500 transition-colors" />
-                </div>
-                {error && <p className="text-red-500 text-xs font-bold text-center mb-4">{error}</p>}
-                <button onClick={handleDeposit} disabled={loading} className="w-full bg-yellow-500 hover:bg-yellow-400 text-black font-black py-4 rounded-xl text-lg flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(234,179,8,0.2)] transition-transform active:scale-95 disabled:opacity-50">
-                    {loading ? <Loader2 className="animate-spin" /> : 'GERAR PIX'}
-                </button>
-            </>
-        ) : (
-            <div className="flex flex-col items-center animate-in zoom-in duration-300">
-                <div className="bg-white p-2 rounded-xl mb-4 shadow-lg"><img src={qrCode} alt="QR Code Pix" className="w-48 h-48" /></div>
-                <div className="w-full bg-zinc-800 rounded-xl p-3 flex items-center justify-between gap-2 mb-4">
-                    <span className="text-xs text-zinc-400 truncate flex-1 font-mono">{copyCode}</span>
-                    <button onClick={copyToClipboard} className="p-2 bg-zinc-700 rounded-lg hover:bg-zinc-600 transition-colors">{copied ? <Check size={16} className="text-green-500" /> : <Copy size={16} className="text-white" />}</button>
-                </div>
-                
-                {successMsg ? (
-                    <div className="bg-green-500/20 text-green-500 p-3 rounded-xl mb-4 w-full text-center font-bold animate-pulse">{successMsg}</div>
-                ) : (
-                    <>
-                        <p className="text-zinc-400 text-xs mb-2 text-center">Pagou? Clique abaixo para liberar:</p>
-                        <button onClick={handleCheckPayment} disabled={loading} className="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-3 rounded-xl mb-3 flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all">
-                            {loading ? <Loader2 className="animate-spin" /> : <><RefreshCw size={18} /> JÁ PAGUEI / ATUALIZAR</>}
-                        </button>
-                        {error && <p className="text-red-400 text-xs font-bold mb-2 text-center">{error}</p>}
-                    </>
-                )}
-
-                <button onClick={handleClose} className="text-zinc-500 text-sm hover:text-white underline">Fechar e Aguardar</button>
+        {step === 1 && (
+          <div className="p-8">
+            <div className="text-center mb-8">
+              <div className="w-16 h-16 bg-[#ffc700]/10 rounded-2xl flex items-center justify-center mx-auto mb-4 text-[#ffc700]"><QrCode size={32} /></div>
+              <h2 className="text-2xl font-black text-white">Depositar via Pix</h2>
+              <p className="text-zinc-500 text-sm mt-2">O saldo cai na hora, 24h por dia.</p>
             </div>
+            <div className="space-y-4">
+              <div>
+                <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Valor</label>
+                <div className="relative mt-1">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400 font-bold">R$</span>
+                  <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl py-4 pl-12 pr-4 text-white text-xl font-bold focus:border-[#ffc700] focus:outline-none transition-all" placeholder="0,00" autoFocus />
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                {[20, 50, 100].map(val => (
+                  <button key={val} onClick={() => setAmount(val.toString())} className="bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-300 font-bold py-2 rounded-lg transition-all text-sm">R$ {val}</button>
+                ))}
+              </div>
+              <button onClick={handleGeneratePix} disabled={loading || !amount} className="w-full bg-[#ffc700] hover:bg-[#e6b300] disabled:opacity-50 text-black font-black py-4 rounded-xl text-lg shadow-lg flex items-center justify-center gap-2 mt-4">
+                {loading ? <Loader2 className="animate-spin" /> : 'GERAR QR CODE'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {step === 2 && depositData && (
+          <div className="p-8 text-center">
+            <h3 className="text-xl font-bold text-white mb-1">Pagamento Pix</h3>
+            <p className="text-zinc-500 text-xs mb-6">Escaneie ou copie o código abaixo</p>
+            <div className="bg-white p-4 rounded-2xl mx-auto w-64 h-64 mb-6 shadow-xl flex items-center justify-center">
+               {depositData.qrcode ? <img src={`data:image/png;base64,${depositData.qrcode}`} alt="QR Code Pix" className="w-full h-full object-contain" /> : <div className="text-black text-sm">QR Code indisponível</div>}
+            </div>
+            <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-1 pl-4 flex items-center gap-2 mb-6">
+                <input readOnly value={depositData.copypaste || ''} className="bg-transparent border-none text-zinc-500 text-xs w-full focus:outline-none truncate" />
+                <button onClick={copyToClipboard} className="bg-zinc-800 hover:bg-zinc-700 text-white p-3 rounded-lg transition-colors"><Copy size={16} /></button>
+            </div>
+            <div className="flex flex-col items-center justify-center gap-2 py-4 bg-zinc-900/30 rounded-xl border border-zinc-800 border-dashed animate-pulse">
+                <div className="flex items-center gap-2 text-[#ffc700] font-bold text-sm"><Loader2 className="animate-spin" size={18} /> Aguardando confirmação...</div>
+                <p className="text-[10px] text-zinc-600">O sistema detectará o pagamento automaticamente.</p>
+            </div>
+          </div>
         )}
       </div>
     </div>
