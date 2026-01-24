@@ -4,15 +4,14 @@ import { useState, useRef, useEffect } from 'react';
 import ScratchCard from '../components/ScratchCard';
 import DepositModal from '../components/DepositModal';
 import { AuthModal } from '../components/AuthModal'; 
-import ProfileSidebar from '../components/ProfileSidebar';
-import NotificationManager from '../components/NotificationManager'; // <--- 1. IMPORTADO AQUI
+import ProfileSidebar from '../components/ProfileSidebar'; // <--- IMPORTADO
 import confetti from 'canvas-confetti';
 import { db, app } from '../lib/firebase';
 import { doc, getDoc, collection, getDocs, onSnapshot, updateDoc, increment } from 'firebase/firestore'; 
 import { getAuth, onAuthStateChanged, signOut } from 'firebase/auth';
 import {
   User, Trophy, ChevronLeft, Home as HomeIcon, Grid, PlusCircle, Bell, Zap, Star, XCircle, RotateCw, Gift, ChevronRight, Play, LogOut, Loader2, Dices
-} from 'lucide-react';
+} from 'lucide-react'; // <--- Adicionei Dices para a Roleta
 
 interface Prize {
   name: string;
@@ -44,7 +43,7 @@ export default function Home() {
   // --- MODAIS ---
   const [isDepositOpen, setIsDepositOpen] = useState(false);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
-  const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [isProfileOpen, setIsProfileOpen] = useState(false); // <--- NOVO ESTADO DA SIDEBAR
 
   const [layoutConfig, setLayoutConfig] = useState<any>({
     logo: '', banner: '', gameThumb: '', scratchCover: '', color: '#ffc700' 
@@ -128,7 +127,7 @@ export default function Home() {
   const handleLogout = () => {
     const auth = getAuth(app);
     signOut(auth);
-    setIsProfileOpen(false); 
+    setIsProfileOpen(false); // Fecha sidebar ao sair
   };
 
  // --- LÓGICA DO JOGO ---
@@ -157,11 +156,12 @@ export default function Home() {
     if (winAudioRef.current) { winAudioRef.current.pause(); winAudioRef.current.currentTime = 0; }
     await new Promise(resolve => setTimeout(resolve, 500));
 
-    // Lógica simplificada de sorteio
+    // Lógica simplificada de sorteio para o exemplo
     let winningPrize: Prize | null = null;
     const random = Math.random() * 100;
     let cumulativeChance = 0;
     
+    // Fallback simples se não houver config de marketing
     for (const prize of activeGame.prizes) {
         cumulativeChance += (Number(prize.chance) || 0);
         if (random <= cumulativeChance) { winningPrize = prize; break; }
@@ -259,9 +259,6 @@ export default function Home() {
 
   return (
     <>
-      {/* 2. ADICIONADO AQUI: O GERENCIADOR DE NOTIFICAÇÕES */}
-      <NotificationManager />
-
       {/* =========================================================================== */}
       {/* 1. LAYOUT MOBILE */}
       {/* =========================================================================== */}
@@ -288,6 +285,7 @@ export default function Home() {
           <div className="flex items-center gap-3">
             <button className="bg-zinc-800 p-2 rounded-full text-zinc-400 hover:text-white relative"><Bell size={20} /><span className="absolute top-0 right-0 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-zinc-800"></span></button>
             
+            {/* PERFIL (Mobile) - Agora abre a Sidebar */}
             {user ? (
                <button onClick={() => setIsProfileOpen(true)} className="w-9 h-9 bg-zinc-800 rounded-full border border-zinc-700 flex items-center justify-center hover:bg-zinc-700 transition-colors">
                   <User size={18} className="text-zinc-400" />
@@ -304,6 +302,7 @@ export default function Home() {
 
         {view === 'GAME' && activeGame ? (
           <main className="flex flex-col items-center px-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            {/* ... CONTEÚDO DO JOGO ... */}
             <div className="w-full max-w-sm flex justify-between items-end mb-4">
               <div><h1 className="text-2xl font-black italic text-white tracking-tight uppercase">{activeGame.name}</h1><p className="text-zinc-500 text-xs font-medium">Encontre 3 símbolos iguais</p></div>
               <div className="bg-zinc-900 px-3 py-1 rounded-full border border-zinc-800 flex items-center gap-2"><span className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: layoutConfig.color }}></span><span className="text-xs text-zinc-300 font-bold">Ao Vivo</span></div>
@@ -387,16 +386,23 @@ export default function Home() {
           </main>
         )}
 
+        {/* MENU INFERIOR MOBILE ATUALIZADO */}
         <div className="fixed bottom-0 w-full bg-zinc-950/95 backdrop-blur-md border-t border-zinc-800 pb-6 pt-2 px-6 flex justify-between items-center z-50 h-20 shadow-2xl">
+          
           <button onClick={handleBackToLobby} className={`flex flex-col items-center gap-1 ${view === 'LOBBY' ? '' : 'text-zinc-500'}`} style={view === 'LOBBY' ? { color: layoutConfig.color } : {}}><HomeIcon size={24} strokeWidth={view === 'LOBBY' ? 3 : 2} /><span className="text-[10px] font-medium">Início</span></button>
           
+          {/* MUDANÇA: Ícone "Jogo" trocado por "Roleta" (apenas visual por enquanto) */}
           <button className="flex flex-col items-center gap-1 text-zinc-500"><Dices size={24} /><span className="text-[10px] font-medium">Roleta</span></button>
           
+          {/* BOTÃO CENTRAL (+) */}
           <div className="relative -top-6"><button onClick={handleOpenDeposit} className="text-black p-4 rounded-full transition-transform active:scale-95 border-4 border-zinc-950" style={{ backgroundColor: layoutConfig.color, boxShadow: `0 0 20px ${layoutConfig.color}66` }}><PlusCircle size={32} strokeWidth={2.5} /></button></div>
           
+          {/* MUDANÇA: "Rank" -> "Ganhadores" */}
           <button className="flex flex-col items-center gap-1 text-zinc-500"><Trophy size={24} /><span className="text-[10px] font-medium">Ganhadores</span></button>
           
+          {/* MUDANÇA: "Perfil" agora abre a Sidebar */}
           <button onClick={() => user ? setIsProfileOpen(true) : setIsAuthOpen(true)} className={`flex flex-col items-center gap-1 ${isProfileOpen ? 'text-white' : 'text-zinc-500'}`}><User size={24} /><span className="text-[10px] font-medium">Perfil</span></button>
+
         </div>
       </div>
 
@@ -422,6 +428,7 @@ export default function Home() {
 
                 <nav className="flex items-center gap-8">
                     <a href="#" className="text-sm font-bold text-white hover:text-yellow-500 transition-colors uppercase tracking-wide">Início</a>
+                    {/* Link Roleta */}
                     <a href="#" className="text-sm font-bold text-zinc-400 hover:text-white transition-colors uppercase tracking-wide flex items-center gap-1"><Dices size={16}/> Roleta</a>
                     <a href="#" className="text-sm font-bold text-zinc-400 hover:text-white transition-colors uppercase tracking-wide">Promoções</a>
                 </nav>
@@ -438,6 +445,7 @@ export default function Home() {
                         </div>
                         <div className="h-8 w-px bg-white/10 mx-2"></div>
                         
+                        {/* MUDANÇA: Botão Perfil/Sair Desktop agora abre Sidebar */}
                         <button onClick={() => setIsProfileOpen(true)} className="flex items-center gap-2 text-zinc-500 hover:text-white font-bold text-sm">
                            <div className="w-8 h-8 rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center"><User size={16}/></div>
                            Perfil
@@ -452,9 +460,11 @@ export default function Home() {
             </div>
         </header>
 
+        {/* ... RESTO DO CONTEÚDO DESKTOP (SEM MUDANÇAS) ... */}
         <div className="pt-24 pb-12 flex-1">
             {view === 'GAME' && activeGame ? (
                 <div className="max-w-6xl mx-auto px-8 flex gap-12 items-start justify-center animate-in fade-in zoom-in duration-300">
+                    {/* ESQUERDA: JOGO */}
                     <div className="flex-1 max-w-[500px]">
                         <div className="relative w-full aspect-square bg-zinc-900 rounded-[2rem] p-4 shadow-2xl border border-zinc-800 overflow-hidden ring-1 ring-white/5">
                             <div className="relative w-full h-full bg-zinc-950 rounded-[1.5rem] p-6 border border-zinc-800/50">
@@ -479,6 +489,7 @@ export default function Home() {
                         </div>
                     </div>
 
+                    {/* DIREITA: INFO */}
                     <div className="w-[400px] flex flex-col gap-6 pt-4">
                         <div>
                             <div className="flex items-center gap-3 mb-2">
@@ -514,6 +525,7 @@ export default function Home() {
                     </div>
                 </div>
             ) : (
+                // === LOBBY DESKTOP ===
                 <div className="max-w-7xl mx-auto px-8">
                     <div className="w-full h-[400px] rounded-[2rem] relative overflow-hidden shadow-2xl border border-zinc-800 mb-12 group">
                         {layoutConfig.banner ? (
@@ -569,6 +581,7 @@ export default function Home() {
         </div>
       </div>
 
+      {/* MODAIS COMPARTILHADOS */}
       {showPopup && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-sm flex items-center justify-center z-[70] p-6 animate-in fade-in zoom-in duration-300">
           <div className="w-full max-w-sm bg-zinc-900 rounded-3xl p-6 border border-zinc-800 text-center relative shadow-2xl">
@@ -588,15 +601,17 @@ export default function Home() {
         </div>
       )}
 
+      {/* MODAL DE LOGIN */}
       <AuthModal 
         isOpen={isAuthOpen} 
         onClose={() => setIsAuthOpen(false)} 
         onLoginSuccess={(u) => {
             setUser(u);
-            setIsDepositOpen(true); 
+            setIsDepositOpen(true); // Abre o depósito logo após logar
         }} 
       />
 
+      {/* MODAL DE DEPÓSITO */}
       <DepositModal 
         isOpen={isDepositOpen} 
         onClose={() => setIsDepositOpen(false)} 
@@ -604,6 +619,7 @@ export default function Home() {
         userEmail={user?.email} 
       />
 
+      {/* --- SIDEBAR DE PERFIL (NOVO) --- */}
       <ProfileSidebar 
         isOpen={isProfileOpen} 
         onClose={() => setIsProfileOpen(false)} 
