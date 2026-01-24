@@ -71,7 +71,6 @@ export default function Home() {
   // --- NOTIFICAÇÕES ---
   const [notifications, setNotifications] = useState<NotificationMsg[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
-  // Conta apenas as não lidas (lógica simplificada: conta total por enquanto)
   const unreadCount = notifications.length; 
 
   // --- POPUPS ---
@@ -280,12 +279,16 @@ export default function Home() {
 
   // --- NAVEGAÇÃO ---
   const handleOpenDeposit = () => user ? setIsDepositOpen(true) : setIsAuthOpen(true);
+  
+  // CORREÇÃO: Não seta loading(true) aqui para não travar a tela
   const handleEnterGame = (game: Game) => {
     if (!user) return setIsAuthOpen(true);
     setActiveGame(game);
     setView('GAME');
-    setTimeout(() => { setPrizesGrid([]); setLoading(true); }, 100);
+    setPrizesGrid([]); // Limpa o grid
+    setLoading(false); // Garante que a tela de "JOGAR" apareça
   };
+  
   const handleLogout = () => { signOut(getAuth(app)); setIsProfileOpen(false); };
   const handleGoToWinners = () => { setActiveGame(null); setView('WINNERS'); };
 
@@ -400,7 +403,8 @@ export default function Home() {
       if (!user) return setIsAuthOpen(true);
       setActiveGame(game);
       setView('GAME');
-      setTimeout(() => { setPrizesGrid([]); setLoading(true); }, 100);
+      setPrizesGrid([]); 
+      setLoading(false);
   };
 
   return (
@@ -495,6 +499,7 @@ export default function Home() {
              </main>
         )}
 
+        {/* --- TELA DO JOGO (COM CORREÇÃO DE CARREGAMENTO) --- */}
         {view === 'GAME' && activeGame && (
           <main className="flex flex-col items-center px-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
             <div className="w-full max-w-sm flex justify-between items-end mb-4">
@@ -504,9 +509,22 @@ export default function Home() {
             <div className="relative w-full max-w-sm bg-zinc-900 rounded-3xl p-1 shadow-2xl border border-zinc-800 overflow-hidden">
               <div className="absolute top-0 left-0 w-full h-32 opacity-40" style={{ background: `linear-gradient(to bottom, ${layoutConfig.color}33, transparent)` }}></div>
               <div className="relative bg-zinc-950 rounded-[20px] p-4 border border-zinc-800/50">
-                {loading || prizesGrid.length === 0 ? (
-                  <div className="w-full aspect-square flex flex-col items-center justify-center gap-4 text-zinc-500"><div className="animate-spin rounded-full h-12 w-12 border-t-2" style={{ borderColor: layoutConfig.color }}></div><span className="text-xs font-medium uppercase tracking-widest">Carregando...</span></div>
+                
+                {/* --- LÓGICA DE EXIBIÇÃO --- */}
+                {loading ? (
+                    // 1. CARREGANDO (Só aparece se pagou e tá gerando resultado)
+                    <div className="w-full aspect-square flex flex-col items-center justify-center gap-4 text-zinc-500"><div className="animate-spin rounded-full h-12 w-12 border-t-2" style={{ borderColor: layoutConfig.color }}></div><span className="text-xs font-medium uppercase tracking-widest">Sorteando...</span></div>
+                ) : prizesGrid.length === 0 ? (
+                    // 2. ESTADO INICIAL (BOTÃO JOGAR)
+                    <div className="w-full aspect-square flex flex-col items-center justify-center relative rounded-xl overflow-hidden bg-zinc-900 shadow-inner group">
+                        {layoutConfig.scratchCover && <img src={layoutConfig.scratchCover} className="absolute inset-0 w-full h-full object-cover opacity-30 group-hover:scale-105 transition-transform duration-700" />}
+                        <button onClick={playRound} className="relative z-10 bg-green-600 hover:bg-green-500 text-white font-black py-4 px-10 rounded-full shadow-lg transition-transform active:scale-95 flex flex-col items-center border-4 border-green-700">
+                            <span className="text-2xl italic uppercase tracking-tighter drop-shadow-md">JOGAR</span>
+                            <span className="text-sm font-medium opacity-90">{formatCurrency(activeGame.price)}</span>
+                        </button>
+                    </div>
                 ) : (
+                  // 3. JOGO ATIVO (RASPADINHA)
                   <div className="flex flex-col gap-4">
                     <div className="relative w-full aspect-square rounded-xl overflow-hidden shadow-lg border-2 border-zinc-800 group">
                       <div className="absolute inset-0 grid grid-cols-3 grid-rows-3 gap-2 p-2 bg-zinc-900">
@@ -521,6 +539,7 @@ export default function Home() {
                     {!isGameFinished ? <button onClick={handleGameFinish} className="w-full bg-zinc-800 hover:bg-zinc-700 font-bold py-3.5 rounded-xl border border-zinc-700 flex items-center justify-center gap-2 transition-all active:scale-95 shadow-lg" style={{ color: layoutConfig.color }}><Zap size={18} className="fill-current" /> <span className="text-sm tracking-wide">REVELAR TUDO</span></button> : <button onClick={playRound} className="w-full hover:opacity-90 text-black font-black py-3.5 rounded-xl flex items-center justify-center gap-2 transition-all active:scale-95 animate-pulse" style={{ backgroundColor: layoutConfig.color }}><Zap size={18} className="fill-current" /> <span className="text-sm tracking-wide">COMPRAR NOVA ({formatCurrency(activeGame.price)})</span></button>}
                   </div>
                 )}
+
               </div>
             </div>
             <div className="w-full max-w-sm mt-8">
