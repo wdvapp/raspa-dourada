@@ -11,7 +11,7 @@ import { db, app } from '../lib/firebase';
 import { doc, getDoc, collection, getDocs, onSnapshot, updateDoc, increment } from 'firebase/firestore'; 
 import { getAuth, onAuthStateChanged, signOut } from 'firebase/auth';
 import {
-  User, Trophy, ChevronLeft, Home as HomeIcon, Grid, PlusCircle, Bell, Zap, Star, XCircle, RotateCw, Gift, ChevronRight, Play
+  User, Trophy, ChevronLeft, Home as HomeIcon, Grid, PlusCircle, Bell, Zap, Star, XCircle, RotateCw, Gift, ChevronRight, Play, X
 } from 'lucide-react';
 
 interface Prize {
@@ -34,7 +34,6 @@ export default function Home() {
   // --- ESTADOS GERAIS ---
   const [user, setUser] = useState<any>(null);
   const [balance, setBalance] = useState(0); 
-  // ADICIONEI 'WINNERS' NAS OPÇÕES DE TELA
   const [view, setView] = useState<'LOBBY' | 'GAME' | 'WINNERS'>('LOBBY');
   const [gamesList, setGamesList] = useState<Game[]>([]);
   const [activeGame, setActiveGame] = useState<any>(null);
@@ -42,7 +41,10 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [gameId, setGameId] = useState(0);
   
-  // --- PWA (Lógica mantida em background, sem botão visual atrapalhando) ---
+  // --- NOVO: ESTADO PARA O POPUP DE VER PRÊMIOS ---
+  const [previewGame, setPreviewGame] = useState<Game | null>(null);
+
+  // --- PWA ---
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
 
   // --- MODAIS ---
@@ -65,7 +67,6 @@ export default function Home() {
   useEffect(() => {
     if (typeof window !== 'undefined') winAudioRef.current = new Audio('/win.mp3');
 
-    // Captura evento de instalação PWA (silencioso)
     window.addEventListener('beforeinstallprompt', (e) => {
       e.preventDefault();
       setDeferredPrompt(e);
@@ -172,7 +173,6 @@ export default function Home() {
     if (winAudioRef.current) { winAudioRef.current.pause(); winAudioRef.current.currentTime = 0; }
     await new Promise(resolve => setTimeout(resolve, 500));
 
-    // Lógica simplificada de sorteio
     let winningPrize: Prize | null = null;
     const random = Math.random() * 100;
     let cumulativeChance = 0;
@@ -323,10 +323,7 @@ export default function Home() {
                      <h2 className="text-2xl font-black text-white uppercase italic">Galeria de <span style={{ color: layoutConfig.color }}>Ganhadores</span></h2>
                      <p className="text-zinc-500 text-xs mt-1">Veja quem já faturou alto hoje!</p>
                  </div>
-
-                 {/* Lista de Imagens de Ganhadores (Usa as mesmas do Banner) */}
                  <div className="flex flex-col gap-6">
-                     {/* 1. Imagem Principal (Pessoas com Sacolas) */}
                      <div className="rounded-2xl overflow-hidden border border-zinc-800 shadow-2xl">
                          {layoutConfig.banner ? 
                              <img src={layoutConfig.banner} className="w-full h-auto object-cover" /> 
@@ -337,9 +334,6 @@ export default function Home() {
                              <p className="text-zinc-500 text-xs">Prêmios entregues instantaneamente via Pix.</p>
                          </div>
                      </div>
-
-                     {/* 2. Banner de Bônus (Como solicitado) */}
-                     {/* Se você tiver uma URL específica para o bônus, troque layoutConfig.banner pela URL certa aqui embaixo */}
                      <div className="rounded-2xl overflow-hidden border border-zinc-800 shadow-2xl relative">
                           <img src={layoutConfig.banner} className="w-full h-auto object-cover opacity-80" /> 
                           <div className="absolute inset-0 flex items-center justify-center bg-black/40">
@@ -347,7 +341,6 @@ export default function Home() {
                           </div>
                      </div>
                  </div>
-
                  <button onClick={handleBackToLobby} className="w-full mt-8 bg-zinc-800 hover:bg-zinc-700 text-white font-bold py-4 rounded-xl">Voltar para o Início</button>
              </main>
         )}
@@ -430,7 +423,10 @@ export default function Home() {
                                       <span className="text-black font-black text-sm uppercase">JOGAR</span>
                                       <div className="bg-black/20 px-1.5 py-0.5 rounded text-[10px] font-bold text-black">R$ {game.price}</div>
                                   </button>
-                                  <button className="flex items-center gap-1 text-[10px] font-bold text-zinc-400 hover:text-white transition-colors"><Gift size={12} /> VER PRÊMIOS <ChevronRight size={10} /></button>
+                                  {/* AQUI ESTÁ A CORREÇÃO: AGORA O BOTÃO ABRE O POPUP DE PRÊMIOS */}
+                                  <button onClick={(e) => { e.stopPropagation(); setPreviewGame(game); }} className="flex items-center gap-1 text-[10px] font-bold text-zinc-400 hover:text-white transition-colors">
+                                      <Gift size={12} /> VER PRÊMIOS <ChevronRight size={10} />
+                                  </button>
                               </div>
                           </div>
                       </div>
@@ -441,27 +437,64 @@ export default function Home() {
           </main>
         )}
 
-        {/* --- MENU INFERIOR (CORRIGIDO) --- */}
+        {/* --- MENU INFERIOR (CORRIGIDO E CENTRALIZADO) --- */}
         <div className="fixed bottom-0 w-full bg-zinc-950/95 backdrop-blur-md border-t border-zinc-800 pb-6 pt-2 px-6 flex justify-between items-center z-50 h-20 shadow-2xl">
-          <button onClick={handleBackToLobby} className={`flex flex-col items-center gap-1 ${view === 'LOBBY' ? '' : 'text-zinc-500'}`} style={view === 'LOBBY' ? { color: layoutConfig.color } : {}}><HomeIcon size={24} strokeWidth={view === 'LOBBY' ? 3 : 2} /><span className="text-[10px] font-medium">Início</span></button>
           
-          {/* REMOVI O ÍCONE DA ROLETA - SÓ TEM 4 BOTÕES AGORA PARA FICAR MAIS LIMPO */}
+          {/* LADO ESQUERDO: APENAS O HOME */}
+          <div className="flex-1 flex justify-start">
+             <button onClick={handleBackToLobby} className={`flex flex-col items-center gap-1 ${view === 'LOBBY' ? '' : 'text-zinc-500'}`} style={view === 'LOBBY' ? { color: layoutConfig.color } : {}}><HomeIcon size={24} strokeWidth={view === 'LOBBY' ? 3 : 2} /><span className="text-[10px] font-medium">Início</span></button>
+          </div>
+
+          {/* BOTÃO CENTRAL FLUTUANTE (ABSOLUTO PARA GARANTIR O CENTRO) */}
+          <div className="absolute left-1/2 -translate-x-1/2 -top-6">
+              <button onClick={handleOpenDeposit} className="text-black p-4 rounded-full transition-transform active:scale-95 border-4 border-zinc-950 shadow-xl" style={{ backgroundColor: layoutConfig.color, boxShadow: `0 0 20px ${layoutConfig.color}66` }}><PlusCircle size={32} strokeWidth={2.5} /></button>
+          </div>
           
-          <div className="relative -top-6 mx-4"><button onClick={handleOpenDeposit} className="text-black p-4 rounded-full transition-transform active:scale-95 border-4 border-zinc-950" style={{ backgroundColor: layoutConfig.color, boxShadow: `0 0 20px ${layoutConfig.color}66` }}><PlusCircle size={32} strokeWidth={2.5} /></button></div>
-          
-          {/* VOLTEI COM O GANHADORES (TROFÉU) E AGORA ELE LEVA PARA A TELA DE GANHADORES */}
-          <button onClick={handleGoToWinners} className={`flex flex-col items-center gap-1 ${view === 'WINNERS' ? 'text-white' : 'text-zinc-500'}`}><Trophy size={24} /><span className="text-[10px] font-medium">Ganhadores</span></button>
-          
-          <button onClick={() => user ? setIsProfileOpen(true) : setIsAuthOpen(true)} className={`flex flex-col items-center gap-1 ${isProfileOpen ? 'text-white' : 'text-zinc-500'}`}><User size={24} /><span className="text-[10px] font-medium">Perfil</span></button>
+          {/* LADO DIREITO: GANHADORES E PERFIL */}
+          <div className="flex-1 flex justify-end gap-8">
+             <button onClick={handleGoToWinners} className={`flex flex-col items-center gap-1 ${view === 'WINNERS' ? 'text-white' : 'text-zinc-500'}`}><Trophy size={24} /><span className="text-[10px] font-medium">Ganhadores</span></button>
+             <button onClick={() => user ? setIsProfileOpen(true) : setIsAuthOpen(true)} className={`flex flex-col items-center gap-1 ${isProfileOpen ? 'text-white' : 'text-zinc-500'}`}><User size={24} /><span className="text-[10px] font-medium">Perfil</span></button>
+          </div>
+
         </div>
       </div>
 
+      {/* --- POPUP DE VER PRÊMIOS (NOVO) --- */}
+      {previewGame && (
+         <div className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200" onClick={() => setPreviewGame(null)}>
+             <div className="bg-zinc-900 w-full max-w-sm rounded-3xl border border-zinc-800 p-6 relative shadow-2xl" onClick={e => e.stopPropagation()}>
+                 <button onClick={() => setPreviewGame(null)} className="absolute top-4 right-4 text-zinc-500 hover:text-white"><X size={20}/></button>
+                 
+                 <div className="text-center mb-6">
+                     <h3 className="text-xl font-bold text-white mb-1">{previewGame.name}</h3>
+                     <p className="text-zinc-500 text-xs">Tabela de premiação deste jogo</p>
+                 </div>
+
+                 <div className="grid grid-cols-3 gap-3 max-h-[60vh] overflow-y-auto">
+                     {previewGame.prizes && previewGame.prizes.map((p: any, i: number) => (
+                         <div key={i} className="bg-black/30 p-3 rounded-xl border border-white/5 flex flex-col items-center justify-center hover:bg-white/5 transition-colors">
+                             {p.image ? <img src={p.image} className="h-8 w-8 object-contain mb-1" /> : null}
+                             <span className="text-[10px] text-zinc-400 font-bold mb-1 leading-tight text-center">{p.name}</span>
+                             <span className="text-sm font-black text-yellow-500">R$ {p.value}</span>
+                         </div>
+                     ))}
+                 </div>
+                 
+                 <button onClick={() => { setPreviewGame(null); handleEnterGame(previewGame); }} className="w-full mt-6 bg-yellow-500 hover:bg-yellow-400 text-black font-black py-3 rounded-xl flex items-center justify-center gap-2" style={{ backgroundColor: layoutConfig.color }}>
+                     JOGAR AGORA (R$ {previewGame.price})
+                 </button>
+             </div>
+         </div>
+      )}
+
       {/* =========================================================================== */}
-      {/* 2. LAYOUT DESKTOP (MANTIDO IGUAL) */}
+      {/* 2. LAYOUT DESKTOP (MANTIDO) */}
       {/* =========================================================================== */}
       <div className="hidden md:flex flex-col min-h-screen bg-[#09090b] text-white font-sans selection:bg-yellow-500/30">
-        
-        <header className="fixed top-0 w-full z-50 bg-zinc-950/95 backdrop-blur-md border-b border-white/5 h-20 flex items-center px-12 justify-between">
+         {/* ... Cabeçalho e Conteúdo Desktop iguais ao anterior ... */}
+         {/* Para economizar espaço, mantive a estrutura desktop igual, já que o foco da correção foi o Mobile */}
+         {/* Se quiser que eu repita o código desktop inteiro aqui, me avise, mas ele está intacto dentro da div hidden md:flex */}
+         <header className="fixed top-0 w-full z-50 bg-zinc-950/95 backdrop-blur-md border-b border-white/5 h-20 flex items-center px-12 justify-between">
             <div className="flex items-center gap-10">
                 <div className="flex items-center gap-2 cursor-pointer" onClick={handleBackToLobby}>
                     {layoutConfig.logo ? (
@@ -475,14 +508,11 @@ export default function Home() {
                         </div>
                     )}
                 </div>
-
                 <nav className="flex items-center gap-8">
                     <a href="#" className="text-sm font-bold text-white hover:text-yellow-500 transition-colors uppercase tracking-wide">Início</a>
-                    {/* Aqui eu mantive o link mas você pode remover se quiser */}
                     <a href="#" className="text-sm font-bold text-zinc-400 hover:text-white transition-colors uppercase tracking-wide">Promoções</a>
                 </nav>
             </div>
-
             <div className="flex items-center gap-4">
                 {user ? (
                     <>
@@ -493,7 +523,6 @@ export default function Home() {
                             </span>
                         </div>
                         <div className="h-8 w-px bg-white/10 mx-2"></div>
-                        
                         <button onClick={() => setIsProfileOpen(true)} className="flex items-center gap-2 text-zinc-500 hover:text-white font-bold text-sm">
                            <div className="w-8 h-8 rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center"><User size={16}/></div>
                            Perfil
@@ -571,9 +600,6 @@ export default function Home() {
                 </div>
             ) : (
                 <div className="max-w-7xl mx-auto px-8">
-                    {/* ... (Conteúdo Desktop mantido igual, foco no Mobile) ... */}
-                    {/* Se precisar da tela de Ganhadores no Desktop também, me avise, mas foquei no Mobile que você pediu */}
-                    
                     <div className="w-full h-[400px] rounded-[2rem] relative overflow-hidden shadow-2xl border border-zinc-800 mb-12 group">
                         {layoutConfig.banner ? (
                             <img src={layoutConfig.banner} alt="Banner" className="w-full h-full object-cover transition-transform duration-700 hover:scale-105" />
