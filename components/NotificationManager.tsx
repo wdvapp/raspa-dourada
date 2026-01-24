@@ -1,46 +1,52 @@
 'use client';
-
 import { useEffect } from 'react';
 import { getMessaging, getToken } from 'firebase/messaging';
-import { app } from '../lib/firebase'; // Importa seu app já inicializado
+import { app } from '../lib/firebase';
 
 export default function NotificationManager() {
-
-  async function requestPermission() {
-    console.log('Pedindo permissão...');
-    
-    // 1. Pede permissão ao navegador
-    const permission = await Notification.requestPermission();
-    
-    if (permission === 'granted') {
-      console.log('Permissão concedida!');
-      
-      const messaging = getMessaging(app);
-      
-      // 2. Pega o Token (O "CPF" desse celular para receber mensagem)
-      const token = await getToken(messaging, {
-        // COLE SUA CHAVE "BPU..." AQUI EMBAIXO:
-        vapidKey: "BPUzpe58R6mf4HTkyE2USvrJ_WLDzGIktfSMOTgvCOQ4hQXJzS2_0pAXljY8MXV112CEhmoz75-zpTbiaAJqe6s"
-      });
-      
-      if (token) {
-        console.log('SEU TOKEN DE TESTE:', token);
-        // Aqui futuramente salvaremos no banco de dados para enviar promoções
-        // Por enquanto, só mostra no console para testar
-      }
-      
-    } else {
-      console.log('Permissão negada.');
-    }
-  }
-
-  // Tenta pedir assim que o componente carrega (só para teste)
   useEffect(() => {
-    // Só roda no navegador
-    if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
-        requestPermission();
+    async function requestPermission() {
+      try {
+        // 1. Só roda no navegador e se tiver suporte
+        if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+          
+          // 2. Pede Permissão ao Usuário
+          const permission = await Notification.requestPermission();
+          
+          if (permission === 'granted') {
+            console.log('🔔 Permissão concedida!');
+            
+            const messaging = getMessaging(app);
+            
+            // 3. Pega o Token (O endereço do celular)
+            // IMPORTANTE: Pegue sua chave "Key pair" no Firebase Console > Cloud Messaging > Web Push
+            // Se não tiver, pode tentar sem, mas com a chave é garantido.
+            const token = await getToken(messaging, {
+                vapidKey: "BPUZpe5BR6m4HTKyE2USvr1_WLDzGIktfSMOTgvC004hQXJz52_0pAX1jV8MXV1l2CEhmoz75-zpTb1aAjqp6s" 
+            });
+
+            if (token) {
+              console.log('Token gerado:', token);
+              
+              // 4. Manda o Token para o servidor inscrever no grupo "all_users"
+              // (Essa era a parte que faltava no seu código!)
+              await fetch('/api/subscribe', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ token })
+              });
+              
+              console.log('✅ Token enviado para inscrição!');
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Erro na notificação:', error);
+      }
     }
+
+    requestPermission();
   }, []);
 
-  return null; // Esse componente não mostra nada na tela, ele roda escondido
+  return null;
 }

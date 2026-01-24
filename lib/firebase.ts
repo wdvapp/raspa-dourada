@@ -7,15 +7,13 @@ const firebaseConfig = {
   authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
   projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
   storageBucket: "raspa-dourada.appspot.com",
-  messagingSenderId: "seu_id_aqui",
-  appId: "seu_app_id_aqui"
+  // COLOQUE OS NÚMEROS REAIS AQUI EMBAIXO (Tire o "seu_id_aqui"):
+  messagingSenderId: "1035486868104", 
+  appId: "1:1035486868104:web:ef76b9e56ac89825cde53d"
 };
 
-// Singleton: Garante que o Firebase só inicialize uma vez
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
-
 const db = getFirestore(app);
 const auth = getAuth(app);
 
-// Exporta tudo o que precisamos
 export { app, db, auth };
