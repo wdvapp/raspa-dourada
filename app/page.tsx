@@ -11,9 +11,10 @@ import { db, app } from '../lib/firebase';
 import { doc, getDoc, collection, getDocs, onSnapshot, updateDoc, increment } from 'firebase/firestore'; 
 import { getAuth, onAuthStateChanged, signOut } from 'firebase/auth';
 import {
-  User, Trophy, ChevronLeft, Home as HomeIcon, Grid, PlusCircle, Bell, Zap, Star, XCircle, RotateCw, Gift, ChevronRight, Play, X
+  User, Trophy, ChevronLeft, Home as HomeIcon, Grid, PlusCircle, Bell, Zap, Star, XCircle, RotateCw, Gift, ChevronRight, Play, X, Package
 } from 'lucide-react';
 
+// --- INTERFACES ---
 interface Prize {
   name: string;
   value: number;
@@ -30,19 +31,27 @@ interface Game {
   prizes: Prize[];
 }
 
+interface Banner {
+  id: string;
+  image: string;
+  active?: boolean;
+}
+
 export default function Home() {
   // --- ESTADOS GERAIS ---
   const [user, setUser] = useState<any>(null);
   const [balance, setBalance] = useState(0); 
   const [view, setView] = useState<'LOBBY' | 'GAME' | 'WINNERS'>('LOBBY');
   const [gamesList, setGamesList] = useState<Game[]>([]);
+  const [bannersList, setBannersList] = useState<Banner[]>([]); // <--- NOVA LISTA DE BANNERS
   const [activeGame, setActiveGame] = useState<any>(null);
   const [prizesGrid, setPrizesGrid] = useState<Prize[]>([]); 
   const [loading, setLoading] = useState(false);
   const [gameId, setGameId] = useState(0);
   
-  // --- NOVO: ESTADO PARA O POPUP DE VER PRÊMIOS ---
+  // --- ESTADOS DE POPUP ---
   const [previewGame, setPreviewGame] = useState<Game | null>(null);
+  const [showMysteryBox, setShowMysteryBox] = useState(false); // <--- NOVO POPUP SURPRESA
 
   // --- PWA ---
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
@@ -63,6 +72,14 @@ export default function Home() {
   const [winAmount, setWinAmount] = useState<string>('');
   const winAudioRef = useRef<HTMLAudioElement | null>(null);
 
+  // --- HELPER: FORMATAR DINHEIRO ---
+  const formatCurrency = (value: number) => {
+    return new Intl.NumberFormat('pt-BR', {
+      style: 'currency',
+      currency: 'BRL'
+    }).format(value);
+  };
+
   // --- EFEITO INICIAL ---
   useEffect(() => {
     if (typeof window !== 'undefined') winAudioRef.current = new Audio('/win.mp3');
@@ -77,13 +94,21 @@ export default function Home() {
 
     const initData = async () => {
         try {
+            // 1. Config Layout
             const docRef = doc(db, 'config', 'layout');
             const docSnap = await getDoc(docRef);
             if (docSnap.exists()) setLayoutConfig(docSnap.data());
 
+            // 2. Jogos
             const querySnapshot = await getDocs(collection(db, 'games'));
             const list = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Game[];
             setGamesList(list);
+
+            // 3. Banners (Ganhadores) - Correção solicitada
+            const bannersSnapshot = await getDocs(collection(db, 'banners'));
+            const bList = bannersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Banner[];
+            setBannersList(bList);
+
         } catch (error) {
             console.error("Erro carregamento inicial", error);
         }
@@ -226,7 +251,7 @@ export default function Home() {
     for (const [name, indices] of Object.entries(counts)) {
       if (indices.length >= 3 && !badItems.includes(name)) {
         const prizeObj = prizesGrid.find(p => p.name === name);
-        const amountDisplay = prizeObj && prizeObj.value > 0 ? `R$ ${prizeObj.value}` : name;
+        const amountDisplay = prizeObj && prizeObj.value > 0 ? formatCurrency(prizeObj.value) : name;
         return { indices: indices, amount: amountDisplay };
       }
     }
@@ -293,7 +318,7 @@ export default function Home() {
             <div className="flex flex-col cursor-pointer" onClick={handleOpenDeposit}>
               <span className="text-xs text-zinc-400 font-medium">{user ? 'Saldo Disponível' : 'Faça Login'}</span>
               <span className="text-sm font-bold text-white flex items-center gap-1">
-                {user ? `R$ ${balance.toLocaleString('pt-BR', {minimumFractionDigits: 2})}` : 'Entrar'} 
+                {user ? formatCurrency(balance) : 'Entrar'} 
                 <PlusCircle size={14} style={{ color: layoutConfig.color }} />
               </span>
             </div>
@@ -316,7 +341,7 @@ export default function Home() {
 
         <div className="h-20"></div>
 
-        {/* --- TELA DE GANHADORES --- */}
+        {/* --- TELA DE GANHADORES (ATUALIZADA) --- */}
         {view === 'WINNERS' && (
              <main className="px-4 pb-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
                  <div className="text-center mb-8 mt-4">
@@ -324,22 +349,27 @@ export default function Home() {
                      <p className="text-zinc-500 text-xs mt-1">Veja quem já faturou alto hoje!</p>
                  </div>
                  <div className="flex flex-col gap-6">
-                     <div className="rounded-2xl overflow-hidden border border-zinc-800 shadow-2xl">
-                         {layoutConfig.banner ? 
-                             <img src={layoutConfig.banner} className="w-full h-auto object-cover" /> 
-                             : <div className="h-40 bg-zinc-800 flex items-center justify-center text-zinc-500">Imagem Ganhadores 1</div>
-                         }
-                         <div className="bg-zinc-900 p-4">
-                             <p className="text-white font-bold text-sm">Ganhadores da Semana</p>
-                             <p className="text-zinc-500 text-xs">Prêmios entregues instantaneamente via Pix.</p>
-                         </div>
-                     </div>
-                     <div className="rounded-2xl overflow-hidden border border-zinc-800 shadow-2xl relative">
-                          <img src={layoutConfig.banner} className="w-full h-auto object-cover opacity-80" /> 
-                          <div className="absolute inset-0 flex items-center justify-center bg-black/40">
-                                <h3 className="text-2xl font-black text-white text-center px-4 uppercase italic">Bônus de Boas Vindas<br/><span style={{ color: layoutConfig.color }}>ATIVADO</span></h3>
-                          </div>
-                     </div>
+                     {/* Aqui usamos os banners reais do banco de dados */}
+                     {bannersList.length > 0 ? (
+                        bannersList.map((banner, index) => (
+                             <div key={index} className="rounded-2xl overflow-hidden border border-zinc-800 shadow-2xl relative">
+                                 {banner.image ? 
+                                     <img src={banner.image} className="w-full h-auto object-cover" /> 
+                                     : <div className="h-40 bg-zinc-800 flex items-center justify-center text-zinc-500">Banner sem imagem</div>
+                                 }
+                                 {/* Sombra para o texto ficar legível */}
+                                 <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent flex flex-col justify-end p-4">
+                                     <p className="text-white font-bold text-sm">Ganhador Verificado</p>
+                                 </div>
+                             </div>
+                        ))
+                     ) : (
+                        // Fallback caso não tenha banners ainda
+                        <div className="text-center py-10 text-zinc-500">
+                             <Trophy size={48} className="mx-auto mb-2 opacity-50" />
+                             <p>Nenhum ganhador registrado na galeria ainda.</p>
+                        </div>
+                     )}
                  </div>
                  <button onClick={handleBackToLobby} className="w-full mt-8 bg-zinc-800 hover:bg-zinc-700 text-white font-bold py-4 rounded-xl">Voltar para o Início</button>
              </main>
@@ -375,7 +405,7 @@ export default function Home() {
                     {!isGameFinished ? (
                       <button onClick={handleGameFinish} className="w-full bg-zinc-800 hover:bg-zinc-700 font-bold py-3.5 rounded-xl border border-zinc-700 flex items-center justify-center gap-2 transition-all active:scale-95 shadow-lg" style={{ color: layoutConfig.color }}><Zap size={18} className="fill-current" /> <span className="text-sm tracking-wide">REVELAR TUDO</span></button>
                     ) : (
-                      <button onClick={playRound} className="w-full hover:opacity-90 text-black font-black py-3.5 rounded-xl flex items-center justify-center gap-2 transition-all active:scale-95 animate-pulse" style={{ backgroundColor: layoutConfig.color, boxShadow: `0 4px 14px ${layoutConfig.color}66` }}><Zap size={18} className="fill-current" /> <span className="text-sm tracking-wide">COMPRAR NOVA (R$ {activeGame.price})</span></button>
+                      <button onClick={playRound} className="w-full hover:opacity-90 text-black font-black py-3.5 rounded-xl flex items-center justify-center gap-2 transition-all active:scale-95 animate-pulse" style={{ backgroundColor: layoutConfig.color, boxShadow: `0 4px 14px ${layoutConfig.color}66` }}><Zap size={18} className="fill-current" /> <span className="text-sm tracking-wide">COMPRAR NOVA ({formatCurrency(activeGame.price)})</span></button>
                     )}
                   </div>
                 )}
@@ -388,7 +418,7 @@ export default function Home() {
                      <div key={i} className="bg-zinc-900 p-2 rounded-xl border border-zinc-800 flex flex-col items-center justify-center gap-1 min-h-[80px]">
                          {p.image ? <img src={p.image} className="h-8 w-8 object-contain mb-1" /> : null}
                          <span className="font-bold text-[10px] text-center leading-tight text-white">{p.name}</span>
-                         <span className="text-[10px] text-zinc-500 uppercase font-bold" style={{ color: layoutConfig.color }}>R$ {p.value}</span>
+                         <span className="text-[10px] text-zinc-500 uppercase font-bold" style={{ color: layoutConfig.color }}>{formatCurrency(p.value)}</span>
                      </div>
                  ))}
               </div>
@@ -415,15 +445,14 @@ export default function Home() {
                           </div>
                           <div className="p-4 flex flex-col gap-1 items-start text-left">
                               <h3 className="text-white font-bold text-lg leading-tight">{game.name}</h3>
-                              <span className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: layoutConfig.color }}>PRÊMIOS DE ATÉ R$ {maxPrize.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                              <span className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: layoutConfig.color }}>PRÊMIOS DE ATÉ {formatCurrency(maxPrize)}</span>
                               <p className="text-zinc-500 text-xs leading-relaxed line-clamp-2 mb-3">{description}</p>
                               <div className="w-full flex items-center justify-between mt-auto">
                                   <button onClick={() => handleEnterGame(game)} className="flex items-center gap-2 px-4 py-2 rounded-lg transition-transform active:scale-95 hover:brightness-110" style={{ backgroundColor: layoutConfig.color }}>
                                       <div className="w-4 h-4 rounded-full bg-black/20 flex items-center justify-center"><Zap size={10} className="text-black fill-current" /></div>
                                       <span className="text-black font-black text-sm uppercase">JOGAR</span>
-                                      <div className="bg-black/20 px-1.5 py-0.5 rounded text-[10px] font-bold text-black">R$ {game.price}</div>
+                                      <div className="bg-black/20 px-1.5 py-0.5 rounded text-[10px] font-bold text-black">{formatCurrency(game.price)}</div>
                                   </button>
-                                  {/* AQUI ESTÁ A CORREÇÃO: AGORA O BOTÃO ABRE O POPUP DE PRÊMIOS */}
                                   <button onClick={(e) => { e.stopPropagation(); setPreviewGame(game); }} className="flex items-center gap-1 text-[10px] font-bold text-zinc-400 hover:text-white transition-colors">
                                       <Gift size={12} /> VER PRÊMIOS <ChevronRight size={10} />
                                   </button>
@@ -437,20 +466,24 @@ export default function Home() {
           </main>
         )}
 
-        {/* --- MENU INFERIOR (CORRIGIDO E CENTRALIZADO) --- */}
+        {/* --- MENU INFERIOR (ATUALIZADO) --- */}
         <div className="fixed bottom-0 w-full bg-zinc-950/95 backdrop-blur-md border-t border-zinc-800 pb-6 pt-2 px-6 flex justify-between items-center z-50 h-20 shadow-2xl">
           
-          {/* LADO ESQUERDO: APENAS O HOME */}
           <div className="flex-1 flex justify-start">
              <button onClick={handleBackToLobby} className={`flex flex-col items-center gap-1 ${view === 'LOBBY' ? '' : 'text-zinc-500'}`} style={view === 'LOBBY' ? { color: layoutConfig.color } : {}}><HomeIcon size={24} strokeWidth={view === 'LOBBY' ? 3 : 2} /><span className="text-[10px] font-medium">Início</span></button>
           </div>
 
-          {/* BOTÃO CENTRAL FLUTUANTE (ABSOLUTO PARA GARANTIR O CENTRO) */}
-          <div className="absolute left-1/2 -translate-x-1/2 -top-6">
+          {/* BOTÃO CENTRAL (ABSOLUTO) E CAIXA SURPRESA */}
+          <div className="absolute left-1/2 -translate-x-1/2 -top-6 flex items-end gap-2">
+               {/* 4. CAIXA SURPRESA (Novo Ícone) */}
+               <button onClick={() => setShowMysteryBox(true)} className="bg-zinc-800 p-2.5 rounded-full border border-zinc-700 shadow-lg hover:scale-110 transition-transform mb-1">
+                   <Gift size={20} className="text-white" />
+               </button>
+
+               {/* Botão de Adicionar Saldo */}
               <button onClick={handleOpenDeposit} className="text-black p-4 rounded-full transition-transform active:scale-95 border-4 border-zinc-950 shadow-xl" style={{ backgroundColor: layoutConfig.color, boxShadow: `0 0 20px ${layoutConfig.color}66` }}><PlusCircle size={32} strokeWidth={2.5} /></button>
           </div>
           
-          {/* LADO DIREITO: GANHADORES E PERFIL */}
           <div className="flex-1 flex justify-end gap-8">
              <button onClick={handleGoToWinners} className={`flex flex-col items-center gap-1 ${view === 'WINNERS' ? 'text-white' : 'text-zinc-500'}`}><Trophy size={24} /><span className="text-[10px] font-medium">Ganhadores</span></button>
              <button onClick={() => user ? setIsProfileOpen(true) : setIsAuthOpen(true)} className={`flex flex-col items-center gap-1 ${isProfileOpen ? 'text-white' : 'text-zinc-500'}`}><User size={24} /><span className="text-[10px] font-medium">Perfil</span></button>
@@ -459,30 +492,56 @@ export default function Home() {
         </div>
       </div>
 
-      {/* --- POPUP DE VER PRÊMIOS (NOVO) --- */}
+      {/* --- 1. POPUP DE VER PRÊMIOS (ATUALIZADO COM GRADIENTE) --- */}
       {previewGame && (
          <div className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200" onClick={() => setPreviewGame(null)}>
-             <div className="bg-zinc-900 w-full max-w-sm rounded-3xl border border-zinc-800 p-6 relative shadow-2xl" onClick={e => e.stopPropagation()}>
-                 <button onClick={() => setPreviewGame(null)} className="absolute top-4 right-4 text-zinc-500 hover:text-white"><X size={20}/></button>
-                 
-                 <div className="text-center mb-6">
-                     <h3 className="text-xl font-bold text-white mb-1">{previewGame.name}</h3>
-                     <p className="text-zinc-500 text-xs">Tabela de premiação deste jogo</p>
-                 </div>
+             {/* 1. Gradiente Dourado (Visual Melhorado) */}
+             <div className="w-full max-w-sm rounded-3xl p-1 relative shadow-2xl bg-gradient-to-br from-[#ffc700] to-yellow-700" onClick={e => e.stopPropagation()}>
+                 <div className="bg-zinc-950 w-full h-full rounded-[20px] p-6 relative">
+                    <button onClick={() => setPreviewGame(null)} className="absolute top-4 right-4 text-zinc-500 hover:text-white"><X size={20}/></button>
+                    
+                    <div className="text-center mb-6">
+                        <h3 className="text-xl font-black text-white mb-1 uppercase italic">{previewGame.name}</h3>
+                        <p className="text-zinc-400 text-xs">Tabela de premiação deste jogo</p>
+                    </div>
 
-                 <div className="grid grid-cols-3 gap-3 max-h-[60vh] overflow-y-auto">
-                     {previewGame.prizes && previewGame.prizes.map((p: any, i: number) => (
-                         <div key={i} className="bg-black/30 p-3 rounded-xl border border-white/5 flex flex-col items-center justify-center hover:bg-white/5 transition-colors">
-                             {p.image ? <img src={p.image} className="h-8 w-8 object-contain mb-1" /> : null}
-                             <span className="text-[10px] text-zinc-400 font-bold mb-1 leading-tight text-center">{p.name}</span>
-                             <span className="text-sm font-black text-yellow-500">R$ {p.value}</span>
-                         </div>
-                     ))}
+                    <div className="grid grid-cols-3 gap-3 max-h-[60vh] overflow-y-auto">
+                        {previewGame.prizes && previewGame.prizes.map((p: any, i: number) => (
+                            <div key={i} className="bg-zinc-900 p-3 rounded-xl border border-zinc-800 flex flex-col items-center justify-center hover:bg-zinc-800 transition-colors">
+                                {p.image ? <img src={p.image} className="h-8 w-8 object-contain mb-1" /> : null}
+                                <span className="text-[10px] text-zinc-400 font-bold mb-1 leading-tight text-center">{p.name}</span>
+                                {/* 2. Valor Formatado (R$ XX.XXX,XX) */}
+                                <span className="text-xs font-black text-yellow-500">{formatCurrency(p.value)}</span>
+                            </div>
+                        ))}
+                    </div>
+                    
+                    <button onClick={() => { setPreviewGame(null); handleEnterGame(previewGame); }} className="w-full mt-6 bg-yellow-500 hover:bg-yellow-400 text-black font-black py-4 rounded-xl flex items-center justify-center gap-2 uppercase tracking-wide shadow-lg" style={{ backgroundColor: layoutConfig.color }}>
+                        JOGAR AGORA ({formatCurrency(previewGame.price)})
+                    </button>
                  </div>
-                 
-                 <button onClick={() => { setPreviewGame(null); handleEnterGame(previewGame); }} className="w-full mt-6 bg-yellow-500 hover:bg-yellow-400 text-black font-black py-3 rounded-xl flex items-center justify-center gap-2" style={{ backgroundColor: layoutConfig.color }}>
-                     JOGAR AGORA (R$ {previewGame.price})
-                 </button>
+             </div>
+         </div>
+      )}
+
+      {/* --- 5. NOVO POPUP: CAIXA SURPRESA (Daily Free Spins) --- */}
+      {showMysteryBox && (
+         <div className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200" onClick={() => setShowMysteryBox(false)}>
+             <div className="w-full max-w-sm rounded-3xl p-1 relative shadow-2xl bg-gradient-to-br from-purple-500 to-indigo-600" onClick={e => e.stopPropagation()}>
+                 <div className="bg-zinc-950 w-full h-full rounded-[20px] p-8 relative text-center">
+                    <button onClick={() => setShowMysteryBox(false)} className="absolute top-4 right-4 text-zinc-500 hover:text-white"><X size={20}/></button>
+                    
+                    <div className="w-24 h-24 bg-purple-500/20 rounded-full flex items-center justify-center mx-auto mb-6 border-4 border-purple-500 animate-bounce">
+                        <Gift size={48} className="text-purple-400" />
+                    </div>
+
+                    <h3 className="text-2xl font-black text-white mb-2 uppercase italic">Caixa Surpresa</h3>
+                    <p className="text-zinc-400 text-sm mb-6">Volte amanhã para abrir sua caixa e ganhar <span className="text-purple-400 font-bold">Rodadas Grátis</span>!</p>
+
+                    <button disabled className="w-full bg-zinc-800 text-zinc-500 font-bold py-4 rounded-xl cursor-not-allowed">
+                        Disponível em breve...
+                    </button>
+                 </div>
              </div>
          </div>
       )}
@@ -491,9 +550,7 @@ export default function Home() {
       {/* 2. LAYOUT DESKTOP (MANTIDO) */}
       {/* =========================================================================== */}
       <div className="hidden md:flex flex-col min-h-screen bg-[#09090b] text-white font-sans selection:bg-yellow-500/30">
-         {/* ... Cabeçalho e Conteúdo Desktop iguais ao anterior ... */}
-         {/* Para economizar espaço, mantive a estrutura desktop igual, já que o foco da correção foi o Mobile */}
-         {/* Se quiser que eu repita o código desktop inteiro aqui, me avise, mas ele está intacto dentro da div hidden md:flex */}
+         {/* ... Cabeçalho e Conteúdo Desktop ... */}
          <header className="fixed top-0 w-full z-50 bg-zinc-950/95 backdrop-blur-md border-b border-white/5 h-20 flex items-center px-12 justify-between">
             <div className="flex items-center gap-10">
                 <div className="flex items-center gap-2 cursor-pointer" onClick={handleBackToLobby}>
@@ -519,7 +576,7 @@ export default function Home() {
                         <div className="flex flex-col items-end cursor-pointer group" onClick={handleOpenDeposit}>
                             <span className="text-xs text-zinc-400 font-medium group-hover:text-white">Saldo</span>
                             <span className="text-base font-bold text-white flex items-center gap-2 bg-zinc-900 px-4 py-1.5 rounded-full border border-zinc-800 group-hover:border-yellow-500 transition-all">
-                                R$ {balance.toLocaleString('pt-BR', {minimumFractionDigits: 2})} <PlusCircle size={18} style={{ color: layoutConfig.color }} />
+                                {formatCurrency(balance)} <PlusCircle size={18} style={{ color: layoutConfig.color }} />
                             </span>
                         </div>
                         <div className="h-8 w-px bg-white/10 mx-2"></div>
@@ -580,7 +637,7 @@ export default function Home() {
                                 </button>
                             ) : (
                                 <button onClick={playRound} className="w-full bg-yellow-500 hover:bg-yellow-400 text-black font-black py-5 rounded-2xl flex items-center justify-center gap-3 transition-all active:scale-95 animate-pulse shadow-lg uppercase tracking-wider text-base">
-                                    <RotateCw size={24} strokeWidth={3} /> JOGAR DE NOVO (R$ {activeGame.price})
+                                    <RotateCw size={24} strokeWidth={3} /> JOGAR DE NOVO ({formatCurrency(activeGame.price)})
                                 </button>
                             )}
                         </div>
@@ -591,7 +648,7 @@ export default function Home() {
                                 {activeGame.prizes && activeGame.prizes.map((p: any, i: number) => (
                                     <div key={i} className="bg-black/30 p-3 rounded-xl border border-white/5 flex flex-col items-center justify-center hover:bg-white/5 transition-colors">
                                         <span className="text-[10px] text-zinc-400 font-bold mb-1">{p.name}</span>
-                                        <span className="text-sm font-black text-yellow-500">R$ {p.value}</span>
+                                        <span className="text-sm font-black text-yellow-500">{formatCurrency(p.value)}</span>
                                     </div>
                                 ))}
                             </div>
@@ -628,7 +685,7 @@ export default function Home() {
                                 <div key={game.id} className="bg-zinc-900 rounded-3xl overflow-hidden border border-zinc-800 shadow-xl hover:border-yellow-500/50 hover:shadow-yellow-500/20 transition-all group flex flex-col h-[420px]">
                                     <div className="w-full h-56 bg-zinc-950 relative overflow-hidden">
                                         {game.cover ? <img src={game.cover} alt={game.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" /> : <div className="w-full h-full flex items-center justify-center text-zinc-600 text-xs">Sem Imagem</div>}
-                                        <div className="absolute top-4 right-4 bg-black/70 backdrop-blur-md px-3 py-1 rounded-lg border border-white/10 text-white text-xs font-bold">R$ {game.price}</div>
+                                        <div className="absolute top-4 right-4 bg-black/70 backdrop-blur-md px-3 py-1 rounded-lg border border-white/10 text-white text-xs font-bold">{formatCurrency(game.price)}</div>
                                     </div>
                                     <div className="p-6 flex flex-col gap-2 flex-1">
                                         <h3 className="text-white font-bold text-xl leading-tight group-hover:text-yellow-500 transition-colors">{game.name}</h3>
@@ -637,7 +694,7 @@ export default function Home() {
                                         <div className="mt-auto pt-4 border-t border-white/5 flex flex-col gap-3">
                                             <div className="flex justify-between items-center text-xs">
                                                 <span className="text-zinc-400 font-bold uppercase">Prêmio Máximo</span>
-                                                <span className="text-yellow-500 font-black text-base">R$ {maxPrize.toLocaleString('pt-BR')}</span>
+                                                <span className="text-yellow-500 font-black text-base">{formatCurrency(maxPrize)}</span>
                                             </div>
                                             <button onClick={() => handleEnterGame(game)} className="w-full bg-yellow-500 hover:bg-yellow-400 text-black font-black py-3 rounded-xl flex items-center justify-center gap-2 transition-transform active:scale-95 shadow-lg">
                                                 <Zap size={18} className="fill-current" /> JOGAR
