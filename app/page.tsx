@@ -11,7 +11,7 @@ import { db, app } from '../lib/firebase';
 import { doc, getDoc, collection, getDocs, onSnapshot, updateDoc, increment } from 'firebase/firestore'; 
 import { getAuth, onAuthStateChanged, signOut } from 'firebase/auth';
 import {
-  User, Trophy, ChevronLeft, Home as HomeIcon, Grid, PlusCircle, Bell, Zap, Star, XCircle, RotateCw, Gift, ChevronRight, Play, X, Package
+  User, Trophy, ChevronLeft, Home as HomeIcon, Grid, PlusCircle, Bell, Zap, Star, XCircle, RotateCw, Gift, ChevronRight, Play, X
 } from 'lucide-react';
 
 // --- INTERFACES ---
@@ -33,8 +33,10 @@ interface Game {
 
 interface Banner {
   id: string;
-  image: string;
-  active?: boolean;
+  image?: string;
+  url?: string;     // Caso no banco esteja salvo como 'url'
+  photo?: string;   // Caso no banco esteja salvo como 'photo'
+  link?: string;
 }
 
 export default function Home() {
@@ -43,7 +45,7 @@ export default function Home() {
   const [balance, setBalance] = useState(0); 
   const [view, setView] = useState<'LOBBY' | 'GAME' | 'WINNERS'>('LOBBY');
   const [gamesList, setGamesList] = useState<Game[]>([]);
-  const [bannersList, setBannersList] = useState<Banner[]>([]); // <--- NOVA LISTA DE BANNERS
+  const [bannersList, setBannersList] = useState<Banner[]>([]); 
   const [activeGame, setActiveGame] = useState<any>(null);
   const [prizesGrid, setPrizesGrid] = useState<Prize[]>([]); 
   const [loading, setLoading] = useState(false);
@@ -51,7 +53,7 @@ export default function Home() {
   
   // --- ESTADOS DE POPUP ---
   const [previewGame, setPreviewGame] = useState<Game | null>(null);
-  const [showMysteryBox, setShowMysteryBox] = useState(false); // <--- NOVO POPUP SURPRESA
+  const [showMysteryBox, setShowMysteryBox] = useState(false);
 
   // --- PWA ---
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
@@ -104,9 +106,10 @@ export default function Home() {
             const list = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Game[];
             setGamesList(list);
 
-            // 3. Banners (Ganhadores) - Correção solicitada
+            // 3. Banners (Ganhadores)
             const bannersSnapshot = await getDocs(collection(db, 'banners'));
             const bList = bannersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Banner[];
+            console.log("Banners carregados:", bList); // Para debug no console
             setBannersList(bList);
 
         } catch (error) {
@@ -341,7 +344,7 @@ export default function Home() {
 
         <div className="h-20"></div>
 
-        {/* --- TELA DE GANHADORES (ATUALIZADA) --- */}
+        {/* --- TELA DE GANHADORES (PUXA DO BANCO DE DADOS) --- */}
         {view === 'WINNERS' && (
              <main className="px-4 pb-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
                  <div className="text-center mb-8 mt-4">
@@ -349,25 +352,27 @@ export default function Home() {
                      <p className="text-zinc-500 text-xs mt-1">Veja quem já faturou alto hoje!</p>
                  </div>
                  <div className="flex flex-col gap-6">
-                     {/* Aqui usamos os banners reais do banco de dados */}
+                     {/* RENDERIZAÇÃO DOS BANNERS REAIS */}
                      {bannersList.length > 0 ? (
-                        bannersList.map((banner, index) => (
-                             <div key={index} className="rounded-2xl overflow-hidden border border-zinc-800 shadow-2xl relative">
-                                 {banner.image ? 
-                                     <img src={banner.image} className="w-full h-auto object-cover" /> 
-                                     : <div className="h-40 bg-zinc-800 flex items-center justify-center text-zinc-500">Banner sem imagem</div>
-                                 }
-                                 {/* Sombra para o texto ficar legível */}
-                                 <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent flex flex-col justify-end p-4">
-                                     <p className="text-white font-bold text-sm">Ganhador Verificado</p>
+                        bannersList.map((banner, index) => {
+                             // Tenta pegar a imagem de qualquer campo comum (image, url, photo)
+                             const imgUrl = banner.image || banner.url || banner.photo;
+                             
+                             if (!imgUrl) return null; // Se não tem link, não mostra nada
+
+                             return (
+                                 <div key={index} className="rounded-2xl overflow-hidden border border-zinc-800 shadow-2xl relative">
+                                     <img src={imgUrl} className="w-full h-auto object-cover" alt="Ganhador" /> 
+                                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent flex flex-col justify-end p-4">
+                                         <p className="text-white font-bold text-sm">Ganhador Verificado</p>
+                                     </div>
                                  </div>
-                             </div>
-                        ))
+                             );
+                        })
                      ) : (
-                        // Fallback caso não tenha banners ainda
-                        <div className="text-center py-10 text-zinc-500">
-                             <Trophy size={48} className="mx-auto mb-2 opacity-50" />
-                             <p>Nenhum ganhador registrado na galeria ainda.</p>
+                        <div className="text-center py-20 text-zinc-500 border border-zinc-800 rounded-2xl border-dashed">
+                             <Trophy size={48} className="mx-auto mb-4 opacity-30" />
+                             <p className="text-sm">Carregando galeria ou nenhum ganhador ainda.</p>
                         </div>
                      )}
                  </div>
@@ -466,36 +471,46 @@ export default function Home() {
           </main>
         )}
 
-        {/* --- MENU INFERIOR (ATUALIZADO) --- */}
-        <div className="fixed bottom-0 w-full bg-zinc-950/95 backdrop-blur-md border-t border-zinc-800 pb-6 pt-2 px-6 flex justify-between items-center z-50 h-20 shadow-2xl">
+        {/* --- MENU INFERIOR (AGORA COM GRID DE 5 COLUNAS = ALINHAMENTO PERFEITO) --- */}
+        <div className="fixed bottom-0 w-full bg-zinc-950/95 backdrop-blur-md border-t border-zinc-800 pb-6 pt-2 px-2 z-50 h-20 shadow-2xl grid grid-cols-5 items-end">
           
-          <div className="flex-1 flex justify-start">
-             <button onClick={handleBackToLobby} className={`flex flex-col items-center gap-1 ${view === 'LOBBY' ? '' : 'text-zinc-500'}`} style={view === 'LOBBY' ? { color: layoutConfig.color } : {}}><HomeIcon size={24} strokeWidth={view === 'LOBBY' ? 3 : 2} /><span className="text-[10px] font-medium">Início</span></button>
-          </div>
+          {/* 1. INÍCIO */}
+          <button onClick={handleBackToLobby} className={`flex flex-col items-center gap-1 mb-2 ${view === 'LOBBY' ? '' : 'text-zinc-500'}`} style={view === 'LOBBY' ? { color: layoutConfig.color } : {}}>
+              <HomeIcon size={24} strokeWidth={view === 'LOBBY' ? 3 : 2} />
+              <span className="text-[10px] font-medium">Início</span>
+          </button>
 
-          {/* BOTÃO CENTRAL (ABSOLUTO) E CAIXA SURPRESA */}
-          <div className="absolute left-1/2 -translate-x-1/2 -top-6 flex items-end gap-2">
-               {/* 4. CAIXA SURPRESA (Novo Ícone) */}
-               <button onClick={() => setShowMysteryBox(true)} className="bg-zinc-800 p-2.5 rounded-full border border-zinc-700 shadow-lg hover:scale-110 transition-transform mb-1">
-                   <Gift size={20} className="text-white" />
-               </button>
+          {/* 2. SURPRESA (AGORA IGUAL AOS OUTROS) */}
+          <button onClick={() => setShowMysteryBox(true)} className={`flex flex-col items-center gap-1 mb-2 ${showMysteryBox ? 'text-white' : 'text-zinc-500'}`}>
+              <Gift size={24} />
+              <span className="text-[10px] font-medium">Surpresa</span>
+          </button>
 
-               {/* Botão de Adicionar Saldo */}
-              <button onClick={handleOpenDeposit} className="text-black p-4 rounded-full transition-transform active:scale-95 border-4 border-zinc-950 shadow-xl" style={{ backgroundColor: layoutConfig.color, boxShadow: `0 0 20px ${layoutConfig.color}66` }}><PlusCircle size={32} strokeWidth={2.5} /></button>
+          {/* 3. BOTÃO CENTRAL (FLOAT) */}
+          <div className="flex justify-center relative h-full">
+              <button onClick={handleOpenDeposit} className="absolute -top-6 text-black p-4 rounded-full transition-transform active:scale-95 border-4 border-zinc-950 shadow-xl" style={{ backgroundColor: layoutConfig.color, boxShadow: `0 0 20px ${layoutConfig.color}66` }}>
+                  <PlusCircle size={32} strokeWidth={2.5} />
+              </button>
           </div>
           
-          <div className="flex-1 flex justify-end gap-8">
-             <button onClick={handleGoToWinners} className={`flex flex-col items-center gap-1 ${view === 'WINNERS' ? 'text-white' : 'text-zinc-500'}`}><Trophy size={24} /><span className="text-[10px] font-medium">Ganhadores</span></button>
-             <button onClick={() => user ? setIsProfileOpen(true) : setIsAuthOpen(true)} className={`flex flex-col items-center gap-1 ${isProfileOpen ? 'text-white' : 'text-zinc-500'}`}><User size={24} /><span className="text-[10px] font-medium">Perfil</span></button>
-          </div>
+          {/* 4. GANHADORES */}
+          <button onClick={handleGoToWinners} className={`flex flex-col items-center gap-1 mb-2 ${view === 'WINNERS' ? 'text-white' : 'text-zinc-500'}`}>
+              <Trophy size={24} />
+              <span className="text-[10px] font-medium">Ganhadores</span>
+          </button>
+
+          {/* 5. PERFIL */}
+          <button onClick={() => user ? setIsProfileOpen(true) : setIsAuthOpen(true)} className={`flex flex-col items-center gap-1 mb-2 ${isProfileOpen ? 'text-white' : 'text-zinc-500'}`}>
+              <User size={24} />
+              <span className="text-[10px] font-medium">Perfil</span>
+          </button>
 
         </div>
       </div>
 
-      {/* --- 1. POPUP DE VER PRÊMIOS (ATUALIZADO COM GRADIENTE) --- */}
+      {/* --- POPUP DE VER PRÊMIOS --- */}
       {previewGame && (
          <div className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200" onClick={() => setPreviewGame(null)}>
-             {/* 1. Gradiente Dourado (Visual Melhorado) */}
              <div className="w-full max-w-sm rounded-3xl p-1 relative shadow-2xl bg-gradient-to-br from-[#ffc700] to-yellow-700" onClick={e => e.stopPropagation()}>
                  <div className="bg-zinc-950 w-full h-full rounded-[20px] p-6 relative">
                     <button onClick={() => setPreviewGame(null)} className="absolute top-4 right-4 text-zinc-500 hover:text-white"><X size={20}/></button>
@@ -510,7 +525,6 @@ export default function Home() {
                             <div key={i} className="bg-zinc-900 p-3 rounded-xl border border-zinc-800 flex flex-col items-center justify-center hover:bg-zinc-800 transition-colors">
                                 {p.image ? <img src={p.image} className="h-8 w-8 object-contain mb-1" /> : null}
                                 <span className="text-[10px] text-zinc-400 font-bold mb-1 leading-tight text-center">{p.name}</span>
-                                {/* 2. Valor Formatado (R$ XX.XXX,XX) */}
                                 <span className="text-xs font-black text-yellow-500">{formatCurrency(p.value)}</span>
                             </div>
                         ))}
@@ -524,7 +538,7 @@ export default function Home() {
          </div>
       )}
 
-      {/* --- 5. NOVO POPUP: CAIXA SURPRESA (Daily Free Spins) --- */}
+      {/* --- POPUP CAIXA SURPRESA --- */}
       {showMysteryBox && (
          <div className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200" onClick={() => setShowMysteryBox(false)}>
              <div className="w-full max-w-sm rounded-3xl p-1 relative shadow-2xl bg-gradient-to-br from-purple-500 to-indigo-600" onClick={e => e.stopPropagation()}>
@@ -550,7 +564,6 @@ export default function Home() {
       {/* 2. LAYOUT DESKTOP (MANTIDO) */}
       {/* =========================================================================== */}
       <div className="hidden md:flex flex-col min-h-screen bg-[#09090b] text-white font-sans selection:bg-yellow-500/30">
-         {/* ... Cabeçalho e Conteúdo Desktop ... */}
          <header className="fixed top-0 w-full z-50 bg-zinc-950/95 backdrop-blur-md border-b border-white/5 h-20 flex items-center px-12 justify-between">
             <div className="flex items-center gap-10">
                 <div className="flex items-center gap-2 cursor-pointer" onClick={handleBackToLobby}>
