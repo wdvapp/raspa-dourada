@@ -8,7 +8,8 @@ import ProfileSidebar from '../components/ProfileSidebar';
 import NotificationManager from '../components/NotificationManager';
 import confetti from 'canvas-confetti';
 import { db, app } from '../lib/firebase';
-import { doc, getDoc, collection, getDocs, onSnapshot, updateDoc, increment, serverTimestamp, query, orderBy } from 'firebase/firestore'; 
+// --- MUDANÇA 1: Adicionei 'addDoc' na lista de imports abaixo ---
+import { doc, getDoc, collection, getDocs, onSnapshot, updateDoc, increment, serverTimestamp, query, orderBy, addDoc } from 'firebase/firestore'; 
 import { getAuth, onAuthStateChanged, signOut } from 'firebase/auth';
 import {
   User, Trophy, ChevronLeft, Home as HomeIcon, Grid, PlusCircle, Bell, Zap, Star, XCircle, RotateCw, Gift, ChevronRight, Play, X, Clock
@@ -128,7 +129,7 @@ export default function Home() {
             const docSnap = await getDoc(docRef);
             if (docSnap.exists()) setLayoutConfig(docSnap.data());
 
-            // 2. CONFIGURAÇÃO DO PRESENTE DIÁRIO (Alterado para 'daily_gift')
+            // 2. CONFIGURAÇÃO DO PRESENTE DIÁRIO
             const giftRef = doc(db, 'config', 'daily_gift');
             onSnapshot(giftRef, (snap) => {
                 if(snap.exists()) {
@@ -190,7 +191,7 @@ export default function Home() {
     };
   }, []);
 
-  // --- LÓGICA DO BÔNUS DIÁRIO (VERIFICA 24H) ---
+  // --- LÓGICA DO BÔNUS DIÁRIO ---
   const checkBonusAvailability = (lastBonusTimestamp: any) => {
       if (!lastBonusTimestamp) {
           setBonusAvailable(true); // Nunca pegou
@@ -213,21 +214,30 @@ export default function Home() {
       }
   };
 
+  // --- MUDANÇA 2: Função Atualizada para Criar Notificação no Sininho ---
   const claimDailyBonus = async () => {
-      // Verifica se está ativo no banco (dailyGiftConfig.active)
       if (!user || !bonusAvailable || !dailyGiftConfig.active) return;
       setClaimingBonus(true);
 
       try {
           const userRef = doc(db, 'users', user.uid);
           
+          // 1. Dá o dinheiro
           await updateDoc(userRef, {
-              balance: increment(dailyGiftConfig.amount), // Valor do banco (ex: 5.00)
+              balance: increment(dailyGiftConfig.amount), 
               lastDailyBonus: serverTimestamp()
+          });
+
+          // 2. CRIA A NOTIFICAÇÃO NO BANCO (Isso faz o sininho acender)
+          await addDoc(collection(db, 'users', user.uid, 'notifications'), {
+              title: '🎁 Bônus Resgatado!',
+              body: `Você recebeu ${formatCurrency(dailyGiftConfig.amount)} de presente diário. Aproveite!`,
+              read: false,
+              createdAt: serverTimestamp()
           });
           
           triggerWin(); 
-          alert(`PARABÉNS! Bônus de ${formatCurrency(dailyGiftConfig.amount)} resgatado!`);
+          // O alerta visual continua, mas agora tem o registro no sino também
           setShowMysteryBox(false);
       } catch (error) {
           console.error(error);
