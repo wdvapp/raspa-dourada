@@ -558,4 +558,4 @@ export default function Home() {
       <ProfileSidebar isOpen={isProfileOpen} onClose={() => setIsProfileOpen(false)} user={user} balance={balance} onLogout={handleLogout} />
     </>
   );
-}
+} 
