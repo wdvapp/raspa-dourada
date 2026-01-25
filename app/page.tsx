@@ -76,7 +76,6 @@ export default function Home() {
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
 
-  // Valores padrão para evitar erros de renderização inicial
   const [layoutConfig, setLayoutConfig] = useState<any>({
     logo: '', banner: '', gameThumb: '', scratchCover: '', color: '#ffc700' 
   });
@@ -95,8 +94,6 @@ export default function Home() {
   useEffect(() => {
     if (typeof window !== 'undefined') winAudioRef.current = new Audio('/win.mp3');
     const auth = getAuth(app);
-    
-    // Referências para limpeza dos listeners
     let unsubSnap: Unsubscribe | null = null;
     let unsubPers: Unsubscribe | null = null;
     let unsubGlob: Unsubscribe | null = null;
@@ -105,25 +102,20 @@ export default function Home() {
         try {
             const docSnap = await getDoc(doc(db, 'config', 'layout'));
             if (docSnap.exists()) setLayoutConfig(docSnap.data());
-            
             onSnapshot(doc(db, 'config', 'daily_gift'), (snap) => { 
                 if(snap.exists()) setDailyGiftConfig(snap.data() as any); 
             });
-
             const gSnap = await getDocs(collection(db, 'games'));
             setGamesList(gSnap.docs.map(d => ({ id: d.id, ...d.data() })) as Game[]);
-            
             const wSnap = await getDocs(collection(db, 'winners'));
             setWinnersList(wSnap.docs.map(d => ({ id: d.id, ...d.data() })) as Winner[]);
-        } catch (e) { console.error("Erro ao carregar dados iniciais:", e); }
+        } catch (e) { console.error(e); }
     };
 
     initData();
 
     const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
-      
-      // Limpa listeners anteriores se o usuário mudar
       if (unsubSnap) unsubSnap();
       if (unsubPers) unsubPers();
       if (unsubGlob) unsubGlob();
@@ -143,19 +135,16 @@ export default function Home() {
 
         let pMsgs: NotificationMsg[] = [];
         let gMsgs: NotificationMsg[] = [];
-
         unsubPers = onSnapshot(query(collection(db, 'users', currentUser.uid, 'notifications'), orderBy('createdAt', 'desc')), (s) => {
             pMsgs = s.docs.map(d => ({ id: d.id, ...d.data(), isGlobal: false })) as NotificationMsg[];
             updateNotifs(pMsgs, gMsgs);
         });
-
         unsubGlob = onSnapshot(query(collection(db, 'global_notifications'), orderBy('createdAt', 'desc')), (s) => {
             gMsgs = s.docs.map(d => ({ id: d.id, ...d.data(), isGlobal: true })) as NotificationMsg[];
             updateNotifs(pMsgs, gMsgs);
         });
       } else {
         setBalance(0);
-        // setIsAuthOpen(true); // Removido para não forçar login ao carregar a página
       }
     });
 
@@ -184,24 +173,14 @@ export default function Home() {
       setClaimingBonus(true);
       try {
           await updateDoc(doc(db, 'users', user.uid), { balance: increment(dailyGiftConfig.amount), lastDailyBonus: serverTimestamp() });
-          await addDoc(collection(db, 'users', user.uid, 'notifications'), { 
-            title: '🎁 Bônus!', 
-            body: `Ganhou ${formatCurrency(dailyGiftConfig.amount)}!`, 
-            read: false, 
-            createdAt: serverTimestamp() 
-          });
-          triggerWin(); 
-          setShowMysteryBox(false);
+          await addDoc(collection(db, 'users', user.uid, 'notifications'), { title: '🎁 Bônus!', body: `Ganhou ${formatCurrency(dailyGiftConfig.amount)}!`, read: false, createdAt: serverTimestamp() });
+          triggerWin(); setShowMysteryBox(false);
       } catch (e) { console.error(e); } finally { setClaimingBonus(false); }
   };
 
   const handleEnterGame = async (game: Game) => {
     if (!user) return setIsAuthOpen(true);
-    if (balance < game.price) { 
-        setActiveGame(game); 
-        setIsDepositOpen(true); 
-        return; 
-    }
+    if (balance < game.price) { setActiveGame(game); setIsDepositOpen(true); return; }
     setActiveGame(game);
     setView('GAME');
     await playRound(game); 
@@ -210,7 +189,8 @@ export default function Home() {
   const playRound = async (gameOverride?: Game) => {
     const game = gameOverride || activeGame;
     if (!game || balance < game.price) return;
-    
+    if (user) await updateDoc(doc(db, 'users', user.uid), { balance: increment(-game.price) });
+
     setLoading(true);
     setIsGameFinished(false);
     setShowPopup(false);
@@ -218,58 +198,48 @@ export default function Home() {
     setWinAmount('');
     setResultType(null);
 
-    try {
-        if (user) await updateDoc(doc(db, 'users', user.uid), { balance: increment(-game.price) });
+    await new Promise(r => setTimeout(r, 400));
 
-        await new Promise(r => setTimeout(r, 400));
-
-        let winP: Prize | null = null;
-        const rand = Math.random() * 100;
-        let cumul = 0;
-        for (const p of game.prizes) {
-            cumul += Number(p.chance);
-            if (rand <= cumul) { winP = p; break; }
-        }
-
-        let grid: Prize[] = [];
-        if (winP) {
-            grid.push(winP, winP, winP);
-            const others = game.prizes.filter(p => p.name !== winP?.name);
-            for (let i = 0; i < 6; i++) {
-                grid.push(others.length > 0 ? others[Math.floor(Math.random() * others.length)] : winP);
-            }
-        } else {
-            const counts: Record<string, number> = {};
-            for (let i = 0; i < 9; i++) {
-                let cand = game.prizes[Math.floor(Math.random() * game.prizes.length)];
-                if ((counts[cand.name] || 0) >= 2) {
-                    const safes = game.prizes.filter(p => (counts[p.name] || 0) < 2);
-                    cand = safes.length > 0 ? safes[Math.floor(Math.random() * safes.length)] : game.prizes[0];
-                }
-                grid.push(cand);
-                counts[cand.name] = (counts[cand.name] || 0) + 1;
-            }
-        }
-
-        setPrizesGrid(grid.sort(() => Math.random() - 0.5));
-        setGameId(p => p + 1);
-    } catch (e) {
-        console.error("Erro na rodada:", e);
-    } finally {
-        setLoading(false);
+    let winP: Prize | null = null;
+    const rand = Math.random() * 100;
+    let cumul = 0;
+    for (const p of game.prizes) {
+        cumul += Number(p.chance);
+        if (rand <= cumul) { winP = p; break; }
     }
+
+    let grid: Prize[] = [];
+    if (winP) {
+        grid.push(winP, winP, winP);
+        const others = game.prizes.filter(p => p.name !== winP?.name);
+        for (let i = 0; i < 6; i++) {
+            grid.push(others.length > 0 ? others[Math.floor(Math.random() * others.length)] : winP);
+        }
+    } else {
+        const counts: Record<string, number> = {};
+        for (let i = 0; i < 9; i++) {
+            let cand = game.prizes[Math.floor(Math.random() * game.prizes.length)];
+            if ((counts[cand.name] || 0) >= 2) {
+                const safes = game.prizes.filter(p => (counts[p.name] || 0) < 2);
+                cand = safes.length > 0 ? safes[Math.floor(Math.random() * safes.length)] : game.prizes[0];
+            }
+            grid.push(cand);
+            counts[cand.name] = (counts[cand.name] || 0) + 1;
+        }
+    }
+
+    setPrizesGrid(grid.sort(() => Math.random() - 0.5));
+    setLoading(false);
+    setGameId(p => p + 1);
   };
 
   const handleGameFinish = () => {
     if (isGameFinished) return;
     setIsGameFinished(true);
-    
     const counts: Record<string, number[]> = {};
-    prizesGrid.forEach((p, i) => { 
-        counts[p.name] = [...(counts[p.name] || []), i]; 
-    });
+    prizesGrid.forEach((p, i) => { counts[p.name] = [...(counts[p.name] || []), i]; });
     
-    let winner: { idxs: number[], amount: string, val: number } | null = null;
+    let winner = null;
     for (const [name, idxs] of Object.entries(counts)) {
         const pObj = prizesGrid.find(p => p.name === name);
         if (idxs.length >= 3 && pObj && pObj.value > 0) {
@@ -287,43 +257,26 @@ export default function Home() {
     } else { 
       setResultType('LOSS'); 
     }
-    setTimeout(() => setShowPopup(true), 800);
+    setTimeout(() => setShowPopup(true), 600);
   };
 
   const triggerWin = () => {
-    if (winAudioRef.current) { 
-        winAudioRef.current.currentTime = 0; 
-        winAudioRef.current.play().catch(() => {}); 
-    }
-    confetti({ 
-        particleCount: 150, 
-        spread: 70, 
-        origin: { y: 0.6 }, 
-        colors: [layoutConfig.color || '#ffc700', '#ffffff'] 
-    });
+    if (winAudioRef.current) { winAudioRef.current.currentTime = 0; winAudioRef.current.play().catch(() => {}); }
+    confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 }, colors: [layoutConfig.color || '#ffc700', '#fff'] });
   };
 
-  const handleBackToLobby = () => { 
-    setShowPopup(false); 
-    setIsGameFinished(false); 
-    setActiveGame(null); 
-    setView('LOBBY'); 
-  };
-  
-  const handleLogout = () => { 
-    signOut(getAuth(app)); 
-    setIsProfileOpen(false); 
-    setUser(null);
-    setBalance(0);
-  };
+  const handleBackToLobby = () => { setShowPopup(false); setIsGameFinished(false); setActiveGame(null); setView('LOBBY'); };
+  const handleLogout = () => { signOut(getAuth(app)); setIsProfileOpen(false); };
 
   return (
     <>
       <NotificationManager />
       <div className="min-h-screen bg-zinc-950 flex justify-center selection:bg-yellow-500/30 font-sans">
-        <div className="w-full max-w-md bg-black min-h-screen relative shadow-2xl border-x border-zinc-800 pb-24">
+        {/* CONTAINER RESPONSIVO: max-w-7xl centralizado */}
+        <div className="w-full max-w-7xl bg-black min-h-screen relative shadow-2xl border-x border-zinc-800 pb-24 mx-auto">
             
-            <header className="fixed top-0 w-full max-w-md z-40 bg-zinc-950/80 backdrop-blur-md border-b border-white/5 px-4 h-16 flex items-center justify-between">
+            {/* HEADER RESPONSIVO */}
+            <header className="fixed top-0 w-full max-w-7xl left-1/2 -translate-x-1/2 z-40 bg-zinc-950/80 backdrop-blur-md border-b border-white/5 px-4 h-16 flex items-center justify-between">
                 <div className="flex items-center gap-3">
                     {view !== 'LOBBY' ? (
                         <button onClick={handleBackToLobby} className="p-2 -ml-2 text-zinc-400 hover:text-white"><ChevronLeft size={28} /></button>
@@ -362,13 +315,14 @@ export default function Home() {
 
             <div className="h-20"></div>
 
+            {/* VIPS COM GRID */}
             {view === 'WINNERS' && (
                 <main className="px-4 pb-8 animate-in fade-in duration-500">
                     <div className="text-center mb-8 mt-4"><h2 className="text-2xl font-black italic uppercase">Galeria <span style={{ color: layoutConfig.color }}>Vip</span></h2></div>
-                    <div className="flex flex-col gap-6">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                         {winnersList.map((w, i) => (
                             <div key={i} className="rounded-3xl overflow-hidden border border-zinc-800 relative bg-zinc-900 shadow-2xl">
-                                <img src={w.image || w.url || w.photo} className="w-full aspect-square object-cover" alt="Winner" /> 
+                                <img src={w.image || w.url || w.photo} className="w-full aspect-square object-cover" alt="Vencedor" /> 
                                 <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent flex flex-col justify-end p-6">
                                     <p className="text-yellow-500 font-black text-xl">{formatCurrency(w.amount)}</p>
                                     <p className="text-white font-bold">{w.name}</p>
@@ -380,8 +334,9 @@ export default function Home() {
                 </main>
             )}
 
+            {/* JOGO CENTRALIZADO NO DESKTOP */}
             {view === 'GAME' && activeGame && (
-                <main className="px-4 flex flex-col items-center animate-in fade-in">
+                <main className="px-4 flex flex-col items-center animate-in fade-in max-w-xl mx-auto">
                     <div className="w-full mb-6 flex justify-between items-end">
                         <div><h1 className="text-2xl font-black italic uppercase leading-none">{activeGame.name}</h1><p className="text-zinc-500 text-xs font-bold mt-1 uppercase tracking-tighter">Encontre 3 símbolos iguais</p></div>
                     </div>
@@ -407,16 +362,18 @@ export default function Home() {
                 </main>
             )}
 
+            {/* LOBBY COM GRID RESPONSIVO (PC Lado a Lado) */}
             {view === 'LOBBY' && (
                 <main className="px-4 pb-8">
                     <div className="w-full rounded-[32px] overflow-hidden mb-8 border border-zinc-800 shadow-2xl bg-zinc-900">
                         {layoutConfig.banner ? <img src={layoutConfig.banner} className="w-full h-auto" alt="Banner" /> : <div className="h-40 flex items-center justify-center text-zinc-700 font-bold italic uppercase">Raspadinha</div>}
                     </div>
-                    <div className="flex flex-col gap-6">
+                    
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
                         {gamesList.map(g => (
-                            <div key={g.id} className="bg-zinc-900 rounded-[32px] overflow-hidden border border-zinc-800 shadow-xl">
+                            <div key={g.id} className="bg-zinc-900 rounded-[32px] overflow-hidden border border-zinc-800 shadow-xl flex flex-col">
                                 <div className="h-48 bg-zinc-950 overflow-hidden">{g.cover ? <img src={g.cover} className="w-full h-full object-cover" alt={g.name} /> : null}</div>
-                                <div className="p-6 flex items-center justify-between">
+                                <div className="p-6 flex items-center justify-between mt-auto">
                                     <h3 className="text-white font-black text-lg italic uppercase">{g.name}</h3>
                                     <button onClick={() => handleEnterGame(g)} className="flex flex-col items-center px-6 py-3 rounded-2xl" style={{ backgroundColor: layoutConfig.color }}>
                                         <span className="text-black font-black text-xs uppercase italic">Jogar</span>
@@ -429,7 +386,8 @@ export default function Home() {
                 </main>
             )}
 
-            <nav className="fixed bottom-0 w-full max-w-md bg-zinc-950/95 backdrop-blur-xl border-t border-zinc-900 h-20 grid grid-cols-5 items-center z-40">
+            {/* NAV BAR RESPONSIVA */}
+            <nav className="fixed bottom-0 w-full max-w-7xl left-1/2 -translate-x-1/2 bg-zinc-950/95 backdrop-blur-xl border-t border-zinc-900 h-20 grid grid-cols-5 items-center z-40">
                 <button onClick={handleBackToLobby} className={`flex flex-col items-center gap-1 ${view === 'LOBBY' ? 'text-white' : 'text-zinc-600'}`}><HomeIcon size={22} /><span className="text-[9px] font-black uppercase">Início</span></button>
                 <button onClick={() => user ? setShowMysteryBox(true) : setIsAuthOpen(true)} className="flex flex-col items-center gap-1 text-zinc-600"><Gift size={22} /><span className="text-[9px] font-black uppercase">Bônus</span></button>
                 <div className="relative flex justify-center"><button onClick={() => user ? setIsDepositOpen(true) : setIsAuthOpen(true)} className="absolute -top-12 p-4 rounded-full shadow-2xl border-4 border-zinc-950" style={{ backgroundColor: layoutConfig.color }}><PlusCircle size={28} className="text-black" /></button></div>
