@@ -186,6 +186,7 @@ export default function Home() {
   const handleOpenDeposit = () => user ? setIsDepositOpen(true) : setIsAuthOpen(true);
   
   const handleEnterGame = (game: Game) => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
     if (!user) return setIsAuthOpen(true);
     if (balance < game.price) { setActiveGame(game); setIsDepositOpen(true); return; }
 
@@ -294,15 +295,23 @@ export default function Home() {
     setTimeout(() => { setShowPopup(true); }, 500);
   };
 
-  const triggerWin = () => {
-    if (winAudioRef.current) { winAudioRef.current.currentTime = 0; winAudioRef.current.play().catch(() => {}); }
-    const duration = 3000;
-    const end = Date.now() + duration;
-    (function frame() {
-      confetti({ particleCount: 5, angle: 60, spread: 55, origin: { x: 0 }, colors: ['#FFD700', '#FFFFFF', '#FFA500'] });
-      confetti({ particleCount: 5, angle: 120, spread: 55, origin: { x: 1 }, colors: ['#FFD700', '#FFFFFF', '#FFA500'] });
-      if (Date.now() < end) requestAnimationFrame(frame);
-    }());
+ const triggerWin = () => {
+    // 1. Toca o som de vitória
+    if (winAudioRef.current) { 
+        winAudioRef.current.currentTime = 0; 
+        winAudioRef.current.play().catch(() => {}); 
+    }
+    
+    // 2. A Explosão Dourada (Tiro único, sem câmera lenta)
+    confetti({
+      particleCount: 150,
+      spread: 100,
+      origin: { y: 0.6 },
+      colors: ['#FFD700', '#DAA520', '#FFFFFF'],
+      gravity: 1.5,
+      ticks: 200,
+      scalar: 1.2
+    });
   };
 
   const handleBackToLobby = () => { setShowPopup(false); setIsGameFinished(false); setActiveGame(null); setView('LOBBY'); };
