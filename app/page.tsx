@@ -12,7 +12,7 @@ import { db, app } from '../lib/firebase';
 import { doc, getDoc, collection, getDocs, onSnapshot, updateDoc, increment, serverTimestamp, query, orderBy } from 'firebase/firestore'; 
 import { getAuth, onAuthStateChanged, signOut } from 'firebase/auth';
 import {
-  User, Trophy, ChevronLeft, Home as HomeIcon, Grid, PlusCircle, Bell, Zap, Star, XCircle, RotateCw, Gift, ChevronRight, Play, X, Clock
+  User, Trophy, ChevronLeft, Home as HomeIcon, Grid, PlusCircle, Bell, Zap, Star, XCircle, RotateCw, Gift, ChevronRight, Play, X, Clock, Download
 } from 'lucide-react';
 
 // --- INTERFACES ---
@@ -91,7 +91,10 @@ export default function Home() {
   const [resultType, setResultType] = useState<'WIN' | 'LOSS' | null>(null);
   const [winningIndices, setWinningIndices] = useState<number[]>([]);
   const [winAmount, setWinAmount] = useState<string>('');
+  
+  // ÁUDIOS
   const winAudioRef = useRef<HTMLAudioElement | null>(null);
+  const bgAudioRef = useRef<HTMLAudioElement | null>(null);
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
@@ -99,7 +102,17 @@ export default function Home() {
 
   // --- STARTUP ---
   useEffect(() => {
-    if (typeof window !== 'undefined') winAudioRef.current = new Audio('/win.mp3');
+    // Inicializa sons
+    if (typeof window !== 'undefined') {
+        winAudioRef.current = new Audio('/win.mp3');
+        
+        // Música de fundo
+        bgAudioRef.current = new Audio('/music.mp3');
+        bgAudioRef.current.loop = true;
+        bgAudioRef.current.volume = 0.3; // Volume ambiente
+    }
+
+    // Captura evento de instalação do PWA
     window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); setDeferredPrompt(e); });
 
     const auth = getAuth(app);
@@ -158,6 +171,19 @@ export default function Home() {
         if (unsubscribeNotifs) unsubscribeNotifs();
     };
   }, []);
+
+  // --- CONTROLE DE MÚSICA (Lobby vs Jogo) ---
+  useEffect(() => {
+      if (!bgAudioRef.current) return;
+      if (view === 'GAME') {
+          // Tenta tocar ao entrar no jogo
+          bgAudioRef.current.play().catch(() => {});
+      } else {
+          // Pausa ao sair
+          bgAudioRef.current.pause();
+          bgAudioRef.current.currentTime = 0;
+      }
+  }, [view]);
 
   const checkBonusAvailability = (lastBonusTimestamp: any) => {
       if (!lastBonusTimestamp) { setBonusAvailable(true); return; }
@@ -253,7 +279,7 @@ export default function Home() {
             }
         }
     } else {
-        // CENÁRIO: PERDEU (Aqui estava o problema do Tente+)
+        // CENÁRIO: PERDEU
         // Agora preenchemos com IMAGENS REAIS, mas cuidando pra não dar 3 iguais
         let attempts = 0;
         while (finalGrid.length < 9 && attempts < 100) {
@@ -320,7 +346,7 @@ export default function Home() {
         winAudioRef.current.play().catch(() => {}); 
     }
     
-    // 2. A Explosão Dourada (Tiro único, sem câmera lenta)
+    // 2. A Explosão Dourada
     confetti({
       particleCount: 150,
       spread: 100,
@@ -334,6 +360,17 @@ export default function Home() {
 
   const handleBackToLobby = () => { setShowPopup(false); setIsGameFinished(false); setActiveGame(null); setView('LOBBY'); };
   const handleOpenGame = (game: Game) => { handleEnterGame(game); };
+
+  // --- INSTALAÇÃO DO PWA ---
+  const handleInstallApp = async () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      if (outcome === 'accepted') {
+        setDeferredPrompt(null);
+      }
+    }
+  };
 
   return (
     <>
@@ -460,7 +497,20 @@ export default function Home() {
           <button onClick={handleBackToLobby} className={`flex flex-col items-center justify-center gap-1 h-full ${view === 'LOBBY' ? '' : 'text-zinc-500'}`} style={view === 'LOBBY' ? { color: layoutConfig.color } : {}}><HomeIcon size={24} strokeWidth={view === 'LOBBY' ? 3 : 2} /> <span className="text-[10px] font-medium">Início</span></button>
           <button onClick={() => user ? setShowMysteryBox(true) : setIsAuthOpen(true)} className={`flex flex-col items-center justify-center gap-1 h-full ${showMysteryBox ? 'text-white' : 'text-zinc-500'}`}><Gift size={24} /> <span className="text-[10px] font-medium">Surpresa</span></button>
           <div className="relative h-full flex items-center justify-center"><button onClick={handleOpenDeposit} className="absolute -top-8 text-black p-4 rounded-full transition-transform active:scale-95 border-4 border-zinc-950 shadow-xl" style={{ backgroundColor: layoutConfig.color, boxShadow: `0 0 20px ${layoutConfig.color}66` }}><PlusCircle size={32} strokeWidth={2.5} /></button></div>
-          <button onClick={handleGoToWinners} className={`flex flex-col items-center justify-center gap-1 h-full ${view === 'WINNERS' ? 'text-white' : 'text-zinc-500'}`}><Trophy size={24} /> <span className="text-[10px] font-medium">Ganhadores</span></button>
+          
+          {/* BOTÃO INTELIGENTE: Instalar ou Ganhadores */}
+          {deferredPrompt ? (
+             <button onClick={handleInstallApp} className="flex flex-col items-center justify-center gap-1 h-full text-zinc-500 animate-pulse hover:text-green-500">
+                <Download size={24} /> 
+                <span className="text-[10px] font-medium">Baixar App</span>
+             </button>
+          ) : (
+             <button onClick={handleGoToWinners} className={`flex flex-col items-center justify-center gap-1 h-full ${view === 'WINNERS' ? 'text-white' : 'text-zinc-500'}`}>
+                <Trophy size={24} /> 
+                <span className="text-[10px] font-medium">Ganhadores</span>
+             </button>
+          )}
+
           <button onClick={() => user ? setIsProfileOpen(true) : setIsAuthOpen(true)} className={`flex flex-col items-center justify-center gap-1 h-full ${isProfileOpen ? 'text-white' : 'text-zinc-500'}`}><User size={24} /> <span className="text-[10px] font-medium">Perfil</span></button>
         </div>
       </div>
