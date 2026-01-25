@@ -2,7 +2,6 @@
 'use client';
 
 import React, { useRef, useEffect, useState } from 'react';
-import Image from 'next/image';
 
 interface ScratchCardProps {
   coverImage: string;
@@ -16,11 +15,23 @@ export default function ScratchCard({ coverImage, onReveal, isRevealed }: Scratc
   const [isDrawing, setIsDrawing] = useState(false);
   const scratchAudioRef = useRef<HTMLAudioElement | null>(null);
 
+  // --- CONFIGURAÇÃO DO ÁUDIO ---
   useEffect(() => {
-    // Carrega o som de raspar (garanta que scratch.mp3 está na pasta public)
-    scratchAudioRef.current = new Audio('/scratch_v2.mp3');
-    scratchAudioRef.current.volume = 0.5; // Volume a 50% para não estourar
+    // Carrega o som
+    const audio = new Audio('/scratch_v2.mp3');
+    audio.volume = 0.6; 
+    audio.loop = true; // IMPORTANTE: Deixa em loop para não acabar no meio da raspada
+    scratchAudioRef.current = audio;
 
+    return () => {
+      // Limpeza ao sair da tela
+      audio.pause();
+      audio.src = '';
+    };
+  }, []);
+
+  // --- CONFIGURAÇÃO DO CANVAS ---
+  useEffect(() => {
     const canvas = canvasRef.current;
     const container = containerRef.current;
     if (!canvas || !container) return;
@@ -28,36 +39,46 @@ export default function ScratchCard({ coverImage, onReveal, isRevealed }: Scratc
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Configura o tamanho do canvas igual ao container
     canvas.width = container.offsetWidth;
     canvas.height = container.offsetHeight;
 
-    // Desenha a capa (Imagem ou Cor Dourada)
     const img = new window.Image();
     img.src = coverImage;
     img.onload = () => {
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
     };
-    // Se a imagem falhar ou demorar, pinta de dourado
     ctx.fillStyle = '#FFD700';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }, [coverImage]);
 
-  }, [coverImage, isRevealed]); // Reinicia se a capa mudar ou o jogo resetar
-
-  // Função que toca o som (com proteção para não travar)
-  const playScratchSound = () => {
-    if (scratchAudioRef.current) {
-        if (scratchAudioRef.current.paused) {
-            scratchAudioRef.current.play().catch(() => {});
-        }
+  // --- CONTROLE DE SOM INTELIGENTE ---
+  const startSound = () => {
+    if (scratchAudioRef.current && scratchAudioRef.current.paused && !isRevealed) {
+        scratchAudioRef.current.play().catch(() => {});
     }
   };
 
+  const stopSound = () => {
+    if (scratchAudioRef.current) {
+        scratchAudioRef.current.pause();
+        // Não zeramos o currentTime para dar efeito de continuidade
+    }
+  };
+
+  // Se o jogo acabou, CORTA O SOM NA HORA
+  useEffect(() => {
+    if (isRevealed && scratchAudioRef.current) {
+        scratchAudioRef.current.pause();
+        scratchAudioRef.current.currentTime = 0;
+    }
+  }, [isRevealed]);
+
+
+  // --- LÓGICA DE RASPAR ---
   const getPosition = (event: MouseEvent | TouchEvent) => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
     const rect = canvas.getBoundingClientRect();
-    
     let clientX, clientY;
     if ('touches' in event) {
       clientX = event.touches[0].clientX;
@@ -66,14 +87,12 @@ export default function ScratchCard({ coverImage, onReveal, isRevealed }: Scratc
       clientX = (event as MouseEvent).clientX;
       clientY = (event as MouseEvent).clientY;
     }
-
-    return {
-      x: clientX - rect.left,
-      y: clientY - rect.top
-    };
+    return { x: clientX - rect.left, y: clientY - rect.top };
   };
 
   const scratch = (event: any) => {
+    if (isRevealed) return;
+
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext('2d');
     if (!canvas || !ctx) return;
@@ -82,34 +101,45 @@ export default function ScratchCard({ coverImage, onReveal, isRevealed }: Scratc
 
     ctx.globalCompositeOperation = 'destination-out';
     ctx.beginPath();
-    ctx.arc(x, y, 25, 0, 2 * Math.PI); // Tamanho do "Dedo"
+    ctx.arc(x, y, 25, 0, 2 * Math.PI);
     ctx.fill();
 
-    // Toca o som enquanto raspa
-    playScratchSound();
-
     checkReveal();
+  };
+
+  // --- EVENTOS DE INTERAÇÃO ---
+  
+  const handleStart = (e: any) => {
+      setIsDrawing(true);
+      startSound(); // Começa som ao tocar
+      scratch(e);
+  };
+
+  const handleMove = (e: any) => {
+      if (!isDrawing) return;
+      startSound(); // Garante que o som toca enquanto mexe
+      scratch(e);
+  };
+
+  const handleEnd = () => {
+      setIsDrawing(false);
+      stopSound(); // PAUSA IMEDIATAMENTE AO SOLTAR
   };
 
   const checkReveal = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    // Verifica quantos pixels foram apagados
     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     const pixels = imageData.data;
     let transparentPixels = 0;
-
     for (let i = 3; i < pixels.length; i += 4) {
       if (pixels[i] === 0) transparentPixels++;
     }
-
     const percent = (transparentPixels / (pixels.length / 4)) * 100;
     
-    // Se raspou mais de 45%, revela tudo
     if (percent > 45) {
+      stopSound(); // Garante silêncio
       onReveal();
     }
   };
@@ -119,13 +149,17 @@ export default function ScratchCard({ coverImage, onReveal, isRevealed }: Scratc
       <canvas
         ref={canvasRef}
         className="w-full h-full touch-none cursor-grab active:cursor-grabbing"
-        onMouseDown={(e) => { setIsDrawing(true); scratch(e); }}
-        onMouseMove={(e) => { if (isDrawing) scratch(e); }}
-        onMouseUp={() => setIsDrawing(false)}
-        onMouseLeave={() => setIsDrawing(false)}
-        onTouchStart={(e) => { setIsDrawing(true); scratch(e); }}
-        onTouchMove={(e) => { if (isDrawing) scratch(e); }}
-        onTouchEnd={() => setIsDrawing(false)}
+        
+        // MOUSE (PC)
+        onMouseDown={handleStart}
+        onMouseMove={handleMove}
+        onMouseUp={handleEnd}
+        onMouseLeave={handleEnd}
+        
+        // TOUCH (Celular)
+        onTouchStart={handleStart}
+        onTouchMove={handleMove}
+        onTouchEnd={handleEnd}
       />
     </div>
   );
