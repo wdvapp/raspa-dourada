@@ -8,7 +8,7 @@ import ProfileSidebar from '../components/ProfileSidebar';
 import NotificationManager from '../components/NotificationManager';
 import confetti from 'canvas-confetti';
 import { db, app } from '../lib/firebase';
-import { doc, getDoc, collection, getDocs, onSnapshot, updateDoc, increment, serverTimestamp, query, orderBy, addDoc } from 'firebase/firestore'; 
+import { doc, getDoc, collection, getDocs, onSnapshot, updateDoc, increment, serverTimestamp, query, orderBy } from 'firebase/firestore'; 
 import { getAuth, onAuthStateChanged, signOut } from 'firebase/auth';
 import {
   User, Trophy, ChevronLeft, Home as HomeIcon, Grid, PlusCircle, Bell, Zap, Star, XCircle, RotateCw, Gift, ChevronRight, Play, X, Clock
@@ -47,7 +47,6 @@ interface NotificationMsg {
     body: string;
     read: boolean;
     createdAt: any;
-    isGlobal?: boolean;
 }
 
 export default function Home() {
@@ -71,7 +70,7 @@ export default function Home() {
   // --- NOTIFICAÇÕES ---
   const [notifications, setNotifications] = useState<NotificationMsg[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
-  const unreadCount = notifications.length; 
+  const unreadCount = notifications.filter(n => !n.read).length;
 
   // --- POPUPS ---
   const [previewGame, setPreviewGame] = useState<Game | null>(null);
@@ -120,8 +119,7 @@ export default function Home() {
 
     const auth = getAuth(app);
     let unsubscribeSnapshot: any = null;
-    let unsubscribePersonalNotifs: any = null;
-    let unsubscribeGlobalNotifs: any = null;
+    let unsubscribeNotifs: any = null;
 
     const initData = async () => {
         try {
@@ -130,7 +128,7 @@ export default function Home() {
             const docSnap = await getDoc(docRef);
             if (docSnap.exists()) setLayoutConfig(docSnap.data());
 
-            // 2. Configurações de Marketing (Bônus)
+            // 2. CONFIGURAÇÃO DO PRESENTE DIÁRIO (Alterado para 'daily_gift')
             const giftRef = doc(db, 'config', 'daily_gift');
             onSnapshot(giftRef, (snap) => {
                 if(snap.exists()) {
@@ -170,63 +168,32 @@ export default function Home() {
             }
         });
 
-        // --- SISTEMA DE NOTIFICAÇÕES UNIFICADO (PESSOAL + MARKETING) ---
-        let personalMsgs: NotificationMsg[] = [];
-        let globalMsgs: NotificationMsg[] = [];
-
-        const updateNotifications = () => {
-            // Junta as duas listas e ordena por data (mais recente primeiro)
-            const all = [...personalMsgs, ...globalMsgs].sort((a, b) => {
-                const dateA = a.createdAt?.seconds || 0;
-                const dateB = b.createdAt?.seconds || 0;
-                return dateB - dateA;
-            });
-            setNotifications(all);
-        };
-
-        // 1. Ouvir Notificações PESSOAIS
-        const qPersonal = query(collection(db, 'users', currentUser.uid, 'notifications'), orderBy('createdAt', 'desc'));
-        unsubscribePersonalNotifs = onSnapshot(qPersonal, (snapshot) => {
-            personalMsgs = snapshot.docs.map(d => ({ 
-                id: d.id, 
-                ...d.data(),
-                isGlobal: false 
-            })) as NotificationMsg[];
-            updateNotifications();
-        });
-
-        // 2. Ouvir Notificações GLOBAIS (Marketing do Admin)
-        const qGlobal = query(collection(db, 'global_notifications'), orderBy('createdAt', 'desc'));
-        unsubscribeGlobalNotifs = onSnapshot(qGlobal, (snapshot) => {
-            globalMsgs = snapshot.docs.map(d => ({ 
-                id: d.id, 
-                ...d.data(),
-                isGlobal: true 
-            })) as NotificationMsg[];
-            updateNotifications();
+        // Ouvir Notificações
+        const notifQuery = query(collection(db, 'users', currentUser.uid, 'notifications'), orderBy('createdAt', 'desc'));
+        unsubscribeNotifs = onSnapshot(notifQuery, (snapshot) => {
+            const msgs = snapshot.docs.map(d => ({ id: d.id, ...d.data() })) as NotificationMsg[];
+            setNotifications(msgs);
         });
 
       } else {
         setBalance(0);
         setIsAuthOpen(true);
         if (unsubscribeSnapshot) unsubscribeSnapshot();
-        if (unsubscribePersonalNotifs) unsubscribePersonalNotifs();
-        if (unsubscribeGlobalNotifs) unsubscribeGlobalNotifs();
+        if (unsubscribeNotifs) unsubscribeNotifs();
       }
     });
 
     return () => {
         unsubscribeAuth();
         if (unsubscribeSnapshot) unsubscribeSnapshot();
-        if (unsubscribePersonalNotifs) unsubscribePersonalNotifs();
-        if (unsubscribeGlobalNotifs) unsubscribeGlobalNotifs();
+        if (unsubscribeNotifs) unsubscribeNotifs();
     };
   }, []);
 
-  // --- LÓGICA DO BÔNUS DIÁRIO ---
+  // --- LÓGICA DO BÔNUS DIÁRIO (VERIFICA 24H) ---
   const checkBonusAvailability = (lastBonusTimestamp: any) => {
       if (!lastBonusTimestamp) {
-          setBonusAvailable(true); 
+          setBonusAvailable(true); // Nunca pegou
           return;
       }
       
@@ -236,7 +203,7 @@ export default function Home() {
       const hours24 = 24 * 60 * 60 * 1000;
 
       if (diffMs >= hours24) {
-          setBonusAvailable(true); 
+          setBonusAvailable(true); // Já passou 24h
       } else {
           setBonusAvailable(false);
           const remaining = hours24 - diffMs;
@@ -247,27 +214,20 @@ export default function Home() {
   };
 
   const claimDailyBonus = async () => {
+      // Verifica se está ativo no banco (dailyGiftConfig.active)
       if (!user || !bonusAvailable || !dailyGiftConfig.active) return;
       setClaimingBonus(true);
 
       try {
           const userRef = doc(db, 'users', user.uid);
           
-          // 1. Dá o dinheiro e marca data
           await updateDoc(userRef, {
-              balance: increment(dailyGiftConfig.amount), 
+              balance: increment(dailyGiftConfig.amount), // Valor do banco (ex: 5.00)
               lastDailyBonus: serverTimestamp()
-          });
-
-          // 2. CRIA NOTIFICAÇÃO PESSOAL (Aparece no sininho)
-          await addDoc(collection(db, 'users', user.uid, 'notifications'), {
-              title: '🎁 Bônus Resgatado!',
-              body: `Você recebeu ${formatCurrency(dailyGiftConfig.amount)} de presente diário. Aproveite!`,
-              read: false,
-              createdAt: serverTimestamp()
           });
           
           triggerWin(); 
+          alert(`PARABÉNS! Bônus de ${formatCurrency(dailyGiftConfig.amount)} resgatado!`);
           setShowMysteryBox(false);
       } catch (error) {
           console.error(error);
@@ -279,16 +239,12 @@ export default function Home() {
 
   // --- NAVEGAÇÃO ---
   const handleOpenDeposit = () => user ? setIsDepositOpen(true) : setIsAuthOpen(true);
-  
-  // CORREÇÃO: Não seta loading(true) aqui para não travar a tela
   const handleEnterGame = (game: Game) => {
     if (!user) return setIsAuthOpen(true);
     setActiveGame(game);
     setView('GAME');
-    setPrizesGrid([]); // Limpa o grid
-    setLoading(false); // Garante que a tela de "JOGAR" apareça
+    setTimeout(() => { setPrizesGrid([]); setLoading(true); }, 100);
   };
-  
   const handleLogout = () => { signOut(getAuth(app)); setIsProfileOpen(false); };
   const handleGoToWinners = () => { setActiveGame(null); setView('WINNERS'); };
 
@@ -403,8 +359,7 @@ export default function Home() {
       if (!user) return setIsAuthOpen(true);
       setActiveGame(game);
       setView('GAME');
-      setPrizesGrid([]); 
-      setLoading(false);
+      setTimeout(() => { setPrizesGrid([]); setLoading(true); }, 100);
   };
 
   return (
@@ -429,7 +384,7 @@ export default function Home() {
           </div>
 
           <div className="flex items-center gap-3">
-            {/* NOTIFICAÇÕES (HÍBRIDAS: Pessoais + Marketing) */}
+            {/* NOTIFICAÇÕES (Conectado ao DB) */}
             <div className="relative">
                 <button onClick={() => setShowNotifications(!showNotifications)} className="bg-zinc-800 p-2 rounded-full text-zinc-400 hover:text-white relative">
                     <Bell size={20} />
@@ -444,11 +399,8 @@ export default function Home() {
                         <div className="max-h-64 overflow-y-auto">
                             {notifications.length > 0 ? (
                                 notifications.map(n => (
-                                    <div key={n.id} className={`p-3 border-b border-zinc-800/50 hover:bg-zinc-800/50 ${n.isGlobal ? 'bg-purple-900/10' : ''}`}>
-                                        <div className="flex justify-between items-start mb-1">
-                                            <p className="text-xs font-bold text-white">{n.title}</p>
-                                            {n.isGlobal && <span className="text-[9px] bg-purple-500 text-white px-1 rounded">AVISO</span>}
-                                        </div>
+                                    <div key={n.id} className="p-3 border-b border-zinc-800/50 hover:bg-zinc-800/50">
+                                        <p className="text-xs font-bold text-white mb-1">{n.title}</p>
                                         <p className="text-[10px] text-zinc-400 leading-relaxed">{n.body}</p>
                                     </div>
                                 ))
@@ -499,7 +451,6 @@ export default function Home() {
              </main>
         )}
 
-        {/* --- TELA DO JOGO (COM CORREÇÃO DE CARREGAMENTO) --- */}
         {view === 'GAME' && activeGame && (
           <main className="flex flex-col items-center px-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
             <div className="w-full max-w-sm flex justify-between items-end mb-4">
@@ -509,22 +460,9 @@ export default function Home() {
             <div className="relative w-full max-w-sm bg-zinc-900 rounded-3xl p-1 shadow-2xl border border-zinc-800 overflow-hidden">
               <div className="absolute top-0 left-0 w-full h-32 opacity-40" style={{ background: `linear-gradient(to bottom, ${layoutConfig.color}33, transparent)` }}></div>
               <div className="relative bg-zinc-950 rounded-[20px] p-4 border border-zinc-800/50">
-                
-                {/* --- LÓGICA DE EXIBIÇÃO --- */}
-                {loading ? (
-                    // 1. CARREGANDO (Só aparece se pagou e tá gerando resultado)
-                    <div className="w-full aspect-square flex flex-col items-center justify-center gap-4 text-zinc-500"><div className="animate-spin rounded-full h-12 w-12 border-t-2" style={{ borderColor: layoutConfig.color }}></div><span className="text-xs font-medium uppercase tracking-widest">Sorteando...</span></div>
-                ) : prizesGrid.length === 0 ? (
-                    // 2. ESTADO INICIAL (BOTÃO JOGAR)
-                    <div className="w-full aspect-square flex flex-col items-center justify-center relative rounded-xl overflow-hidden bg-zinc-900 shadow-inner group">
-                        {layoutConfig.scratchCover && <img src={layoutConfig.scratchCover} className="absolute inset-0 w-full h-full object-cover opacity-30 group-hover:scale-105 transition-transform duration-700" />}
-                        <button onClick={playRound} className="relative z-10 bg-green-600 hover:bg-green-500 text-white font-black py-4 px-10 rounded-full shadow-lg transition-transform active:scale-95 flex flex-col items-center border-4 border-green-700">
-                            <span className="text-2xl italic uppercase tracking-tighter drop-shadow-md">JOGAR</span>
-                            <span className="text-sm font-medium opacity-90">{formatCurrency(activeGame.price)}</span>
-                        </button>
-                    </div>
+                {loading || prizesGrid.length === 0 ? (
+                  <div className="w-full aspect-square flex flex-col items-center justify-center gap-4 text-zinc-500"><div className="animate-spin rounded-full h-12 w-12 border-t-2" style={{ borderColor: layoutConfig.color }}></div><span className="text-xs font-medium uppercase tracking-widest">Carregando...</span></div>
                 ) : (
-                  // 3. JOGO ATIVO (RASPADINHA)
                   <div className="flex flex-col gap-4">
                     <div className="relative w-full aspect-square rounded-xl overflow-hidden shadow-lg border-2 border-zinc-800 group">
                       <div className="absolute inset-0 grid grid-cols-3 grid-rows-3 gap-2 p-2 bg-zinc-900">
@@ -539,7 +477,6 @@ export default function Home() {
                     {!isGameFinished ? <button onClick={handleGameFinish} className="w-full bg-zinc-800 hover:bg-zinc-700 font-bold py-3.5 rounded-xl border border-zinc-700 flex items-center justify-center gap-2 transition-all active:scale-95 shadow-lg" style={{ color: layoutConfig.color }}><Zap size={18} className="fill-current" /> <span className="text-sm tracking-wide">REVELAR TUDO</span></button> : <button onClick={playRound} className="w-full hover:opacity-90 text-black font-black py-3.5 rounded-xl flex items-center justify-center gap-2 transition-all active:scale-95 animate-pulse" style={{ backgroundColor: layoutConfig.color }}><Zap size={18} className="fill-current" /> <span className="text-sm tracking-wide">COMPRAR NOVA ({formatCurrency(activeGame.price)})</span></button>}
                   </div>
                 )}
-
               </div>
             </div>
             <div className="w-full max-w-sm mt-8">
