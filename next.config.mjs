@@ -1,14 +1,14 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  // Força a Vercel a ignorar erros de TypeScript na hora de subir
+  // Ignora erros de TypeScript para não travar o build
   typescript: {
     ignoreBuildErrors: true,
   },
-  // Força a Vercel a ignorar erros de regras de código (Lint)
+  // Ignora erros de Linting para não travar o build
   eslint: {
     ignoreDuringBuilds: true,
   },
-}
+};
 
-module.exports = nextConfig
+export default nextConfig;
