@@ -202,7 +202,7 @@ export default function Home() {
 
   const playRound = async (gameOverride?: Game) => {
     const game = gameOverride || activeGame;
-    if (!game) { setLoading(false); return; } // Proteção contra crash
+    if (!game) { setLoading(false); return; }
     
     if (balance < game.price) { setIsDepositOpen(true); return; }
 
@@ -226,37 +226,55 @@ export default function Home() {
     let cumulativeChance = 0;
     const currentPrizes = game.prizes || [];
     
+    // Sorteia se ganhou ou não
     for (const prize of currentPrizes) {
         cumulativeChance += (Number(prize.chance) || 0);
         if (random <= cumulativeChance) { winningPrize = prize; break; }
     }
 
     let finalGrid: Prize[] = [];
-    const loserPlaceholder: Prize = { name: 'Tente+', value: 0, chance: 0, image: '' };
 
     if (winningPrize) {
+        // CENÁRIO: GANHOU (Coloca 3 prêmios iguais)
         finalGrid.push(winningPrize, winningPrize, winningPrize);
+        
+        // Preenche o resto com outros prêmios (sem repetir 3 vezes para não confundir)
         const otherOptions = currentPrizes.filter((p: Prize) => p.name !== winningPrize?.name);
         for (let i = 0; i < 6; i++) {
-            let selectedFiller = loserPlaceholder;
             if (otherOptions.length > 0) {
-                const candidate = otherOptions[Math.floor(Math.random() * otherOptions.length)];
-                if (finalGrid.filter(p => p.name === candidate.name).length < 2) selectedFiller = candidate;
+                // Pega um prêmio aleatório para encher buraco
+                const randomFiller = otherOptions[Math.floor(Math.random() * otherOptions.length)];
+                // Garante que não vai criar outro trio acidentalmente
+                if (finalGrid.filter(p => p.name === randomFiller.name).length < 2) {
+                    finalGrid.push(randomFiller);
+                } else {
+                    finalGrid.push(otherOptions.find(p => p.name !== randomFiller.name) || randomFiller);
+                }
             }
-            finalGrid.push(selectedFiller);
         }
     } else {
-        for (let i = 0; i < 9; i++) {
-            if (Math.random() > 0.3) { finalGrid.push(loserPlaceholder); } 
-            else {
-                 const randomReal = currentPrizes.length > 0 ? currentPrizes[Math.floor(Math.random() * currentPrizes.length)] : null;
-                 if (randomReal) {
-                     if (finalGrid.filter(p => p.name === randomReal.name).length < 2) finalGrid.push(randomReal);
-                     else finalGrid.push(loserPlaceholder);
-                 } else { finalGrid.push(loserPlaceholder); }
+        // CENÁRIO: PERDEU (Aqui estava o problema do Tente+)
+        // Agora preenchemos com IMAGENS REAIS, mas cuidando pra não dar 3 iguais
+        let attempts = 0;
+        while (finalGrid.length < 9 && attempts < 100) {
+            const randomPrize = currentPrizes[Math.floor(Math.random() * currentPrizes.length)];
+            
+            // Conta quantos desse prêmio já tem na grade
+            const count = finalGrid.filter(p => p.name === randomPrize.name).length;
+            
+            // Só adiciona se tiver menos de 2 (para não formar trio e parecer que ganhou)
+            if (count < 2) {
+                finalGrid.push(randomPrize);
             }
+            attempts++;
+        }
+        // Segurança: Se faltar espaço, completa com qualquer um (raro acontecer)
+        while (finalGrid.length < 9) {
+            finalGrid.push(currentPrizes[0]);
         }
     }
+
+    // Embaralha tudo para o prêmio não ficar sempre no começo
     setPrizesGrid(finalGrid.sort(() => Math.random() - 0.5));
     setLoading(false);
     setGameId(prev => prev + 1);
