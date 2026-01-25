@@ -18,7 +18,7 @@ export default function ScratchCard({ coverImage, onReveal, isRevealed }: Scratc
 
   useEffect(() => {
     // Carrega o som de raspar (garanta que scratch.mp3 está na pasta public)
-    scratchAudioRef.current = new Audio('/scratch.mp3');
+    scratchAudioRef.current = new Audio('/scratch_v2.mp3');
     scratchAudioRef.current.volume = 0.5; // Volume a 50% para não estourar
 
     const canvas = canvasRef.current;
