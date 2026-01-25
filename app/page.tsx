@@ -89,7 +89,7 @@ export default function Home() {
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
 
-  // AJUSTE 1: Definindo scratchCover padrão para garantir que a capa dourada apareça
+  // AJUSTE 1: Fixei a capa dourada aqui
   const [layoutConfig, setLayoutConfig] = useState<any>({
     logo: '', banner: '', gameThumb: '', scratchCover: '/gold.png', color: '#ffc700' 
   });
@@ -127,7 +127,8 @@ export default function Home() {
             // 1. Config Layout
             const docRef = doc(db, 'config', 'layout');
             const docSnap = await getDoc(docRef);
-            if (docSnap.exists()) setLayoutConfig((prev: any) => ({...prev, ...docSnap.data()}));
+            // Mantém a capa dourada mesmo se vier vazio do banco
+            if (docSnap.exists()) setLayoutConfig((prev: any) => ({...prev, ...docSnap.data(), scratchCover: '/gold.png'}));
 
             // 2. CONFIGURAÇÃO DO PRESENTE DIÁRIO
             const giftRef = doc(db, 'config', 'daily_gift');
@@ -333,7 +334,7 @@ export default function Home() {
 
   const handleGameFinish = () => {
     if (isGameFinished) return;
-    setIsGameFinished(true); // Isso revela todos os quadrados (vitória ou derrota)
+    setIsGameFinished(true); // REVELAR TUDO
     const result = checkWinner();
     if (result) {
       setResultType('WIN');
@@ -348,15 +349,17 @@ export default function Home() {
     setTimeout(() => { setShowPopup(true); }, 500);
   };
 
-  // AJUSTE 2: Chuva de confetes dourada (estilo chuva, não explosão)
+  // AJUSTE 2: Chuva de Confetes
   const triggerWin = () => {
     if (winAudioRef.current) { winAudioRef.current.currentTime = 0; winAudioRef.current.play().catch(() => {}); }
-    confetti({ 
-      particleCount: 150, 
-      spread: 70, 
-      origin: { y: 0.6 }, 
-      colors: ['#FFD700', '#FFFFFF', '#FFA500'] 
-    });
+    // Configuração de CHUVA (rain) em vez de explosão
+    const duration = 3000;
+    const end = Date.now() + duration;
+    (function frame() {
+      confetti({ particleCount: 5, angle: 60, spread: 55, origin: { x: 0 }, colors: ['#FFD700', '#FFFFFF', '#FFA500'] });
+      confetti({ particleCount: 5, angle: 120, spread: 55, origin: { x: 1 }, colors: ['#FFD700', '#FFFFFF', '#FFA500'] });
+      if (Date.now() < end) requestAnimationFrame(frame);
+    }());
   };
 
   // --- NAVEGAÇÃO ---
@@ -427,10 +430,7 @@ export default function Home() {
         {/* --- TELA WINNERS --- */}
         {view === 'WINNERS' && (
              <main className="px-4 pb-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                 <div className="text-center mb-8 mt-4">
-                     <h2 className="text-2xl font-black text-white uppercase italic">Galeria de <span style={{ color: layoutConfig.color }}>Ganhadores</span></h2>
-                     <p className="text-zinc-500 text-xs mt-1">Veja quem já faturou alto hoje!</p>
-                 </div>
+                 <div className="text-center mb-8 mt-4"><h2 className="text-2xl font-black text-white uppercase italic">Galeria de <span style={{ color: layoutConfig.color }}>Ganhadores</span></h2></div>
                  <div className="flex flex-col gap-6">
                      {winnersList.length > 0 ? (
                         winnersList.map((winner, index) => {
@@ -480,7 +480,7 @@ export default function Home() {
                       </div>
                       <ScratchCard key={gameId} isRevealed={isGameFinished} onReveal={handleGameFinish} coverImage={layoutConfig.scratchCover} />
                     </div>
-                    {!isGameFinished ? <button onClick={handleGameFinish} className="w-full bg-zinc-800 hover:bg-zinc-700 font-bold py-3.5 rounded-xl border border-zinc-700 flex items-center justify-center gap-2 transition-all active:scale-95 shadow-lg" style={{ color: layoutConfig.color }}><Zap size={18} className="fill-current" /> <span className="text-sm tracking-wide">REVELAR TUDO</span></button> : <button onClick={playRound} className="w-full hover:opacity-90 text-black font-black py-3.5 rounded-xl flex items-center justify-center gap-2 transition-all active:scale-95 animate-pulse" style={{ backgroundColor: layoutConfig.color }}><Zap size={18} className="fill-current" /> <span className="text-sm tracking-wide">COMPRAR NOVA ({formatCurrency(activeGame.price)})</span></button>}
+                    {!isGameFinished ? <button onClick={handleGameFinish} className="w-full bg-zinc-800 hover:bg-zinc-700 font-bold py-3.5 rounded-xl border border-zinc-700 flex items-center justify-center gap-2 transition-all active:scale-95 shadow-lg" style={{ color: layoutConfig.color }}><Zap size={18} className="fill-current" /> <span className="text-sm tracking-wide">REVELAR TUDO</span></button> : <button onClick={playRound} className="w-full hover:opacity-90 text-black font-black py-3.5 rounded-xl flex items-center justify-center gap-2 transition-all active:scale-95 animate-pulse" style={{ backgroundColor: layoutConfig.color }}><RotateCw size={18} className="fill-current" /> <span className="text-sm tracking-wide">COMPRAR NOVA ({formatCurrency(activeGame.price)})</span></button>}
                   </div>
                 )}
               </div>
@@ -524,7 +524,7 @@ export default function Home() {
                                       <span className="text-black font-black text-sm uppercase">JOGAR</span>
                                       <div className="bg-black/20 px-1.5 py-0.5 rounded text-[10px] font-bold text-black">{formatCurrency(game.price)}</div>
                                   </button>
-                                  <button onClick={(e) => { e.stopPropagation(); setPreviewGame(game); }} className="flex items-center gap-1 text-[10px] font-bold text-zinc-400 hover:text-white transition-colors"><Gift size={12} /> VER PRÊMIOS <ChevronRight size={10} /></button>
+                                  <button onClick={(e) => { e.stopPropagation(); setPreviewGame(game); }} className="flex items-center gap-1 text-[10px] font-bold text-zinc-400 hover:text-white"><Gift size={12} /> VER PRÊMIOS <ChevronRight size={10} /></button>
                               </div>
                           </div>
                       </div>
