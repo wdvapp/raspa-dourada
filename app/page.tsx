@@ -542,7 +542,7 @@ export default function Home() {
       )}
 
       {showPopup && (
-        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm flex items-center justify-center z-[70] p-6 animate-in fade-in">
+        <div className="min-h-screen bg-zinc-950 text-white font-sans pb-24 md:max-w-md md:mx-auto md:border-x md:border-zinc-800 md:shadow-2xl" style={{ selectionBackgroundColor: layoutConfig.color } as any}>
           <div className="w-full max-w-sm bg-zinc-900 rounded-3xl p-6 border border-zinc-800 text-center relative shadow-2xl">
             <div className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 border-4 ${resultType === 'WIN' ? 'text-black shadow-lg' : 'bg-zinc-800 border-zinc-700 text-zinc-500'}`} style={resultType === 'WIN' ? { backgroundColor: layoutConfig.color, borderColor: '#fff' } : {}}>{resultType === 'WIN' ? <Trophy size={40} className="fill-current" /> : <XCircle size={40} />}</div>
             <h2 className="text-2xl font-black text-white mb-2 uppercase italic">{resultType === 'WIN' ? 'Parabéns!' : 'Não foi dessa vez'}</h2>
