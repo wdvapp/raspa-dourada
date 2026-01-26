@@ -13,38 +13,46 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const messaging = firebase.messaging();
 
-// 1. DESENHA A NOTIFICAÇÃO MANUALMENTE (Modo Background)
+// 1. RECEBER E MOSTRAR (SIMPLES E DIRETO)
 messaging.onBackgroundMessage((payload) => {
-  console.log('Recebido no background:', payload);
+  console.log('Notificação recebida:', payload);
 
-  // Pegamos os dados que vêm dentro da gaveta "data"
-  const { title, body, image, link } = payload.data;
+  // Pega os dados que mandamos da API
+  const { title, body, link } = payload.data;
 
-  const notificationTitle = title;
   const notificationOptions = {
     body: body,
-    icon: '/icon-192x192.png', // O ícone do app
-    image: image,               // A Imagem Grande (Banner)
-    data: { url: link },        // O Link para clicar
-    vibrate: [200, 100, 200],   // Vibração
-    requireInteraction: true    // Fica na tela até a pessoa clicar ou fechar
+    icon: '/icon-192x192.png', // OBRIGATÓRIO: Seu logo
+    badge: '/icon-192x192.png', // O íconezinho branco na barra de status (Android)
+    data: { url: link || '/' }, // Guarda o link para usar no clique
+    vibrate: [200, 100, 200],
+    requireInteraction: true // Faz a notificação ficar na tela até clicar
   };
 
-  return self.registration.showNotification(notificationTitle, notificationOptions);
+  // Mostra a notificação
+  return self.registration.showNotification(title, notificationOptions);
 });
 
-// 2. O CLIQUE (Abre o link)
+// 2. CLICAR E ABRIR
 self.addEventListener('notificationclick', function(event) {
-  event.notification.close();
-  const urlToOpen = event.notification.data.url || '/';
+  event.notification.close(); // Fecha a notificação
+  
+  // Pega o link que guardamos acima
+  const urlToOpen = event.notification.data.url;
 
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
+      // Tenta focar numa aba já aberta
       for (let i = 0; i < windowClients.length; i++) {
         const client = windowClients[i];
-        if (client.url === urlToOpen && 'focus' in client) return client.focus();
+        if (client.url === urlToOpen && 'focus' in client) {
+          return client.focus();
+        }
       }
-      if (clients.openWindow) return clients.openWindow(urlToOpen);
+      // Se não tiver, abre uma nova
+      if (clients.openWindow) {
+        return clients.openWindow(urlToOpen);
+      }
     })
   );
 });

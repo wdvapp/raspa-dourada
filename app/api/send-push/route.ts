@@ -22,7 +22,8 @@ if (!admin.apps.length) {
 
 export async function POST(request: Request) {
   try {
-    const { title, body, image, link } = await request.json();
+    // Pegamos link, mas ignoramos imagem de banner para não dar erro
+    const { title, body, link } = await request.json();
 
     if (!title || !body) return NextResponse.json({ success: false, error: 'Dados incompletos' }, { status: 400 });
 
@@ -30,9 +31,10 @@ export async function POST(request: Request) {
     const snapshot = await getDocs(usersRef);
     const tokensToSend: string[] = [];
 
+    // 1. Salva no Banco (Histórico do Usuário)
     const dbPromises = snapshot.docs.map(async (userDoc) => {
         await addDoc(collection(db, 'users', userDoc.id, 'notifications'), {
-            title, body, image: image || null, link: link || '/', read: false, createdAt: serverTimestamp()
+            title, body, link: link || '/', read: false, createdAt: serverTimestamp()
         });
         const tokenSnap = await getDocs(collection(db, 'users', userDoc.id, 'fcmTokens'));
         tokenSnap.forEach(t => {
@@ -43,18 +45,15 @@ export async function POST(request: Request) {
 
     await Promise.all(dbPromises);
 
+    // 2. Envia para o Celular (Modo Dados Puro)
     let successCount = 0;
     if (tokensToSend.length > 0 && admin.apps.length) {
         
-        // --- A MUDANÇA MÁGICA ESTÁ AQUI ---
-        // Não usamos mais 'notification'. Mandamos tudo dentro de 'data'.
-        // Isso força o Service Worker a montar a notificação do nosso jeito.
         const message = {
             data: {
                 title: title,
                 body: body,
-                image: image || "", // Se não tiver imagem, manda vazio
-                link: link || "/"   // Se não tiver link, manda home
+                link: link || "/" // Se não preencher link, vai pra home
             },
             tokens: tokensToSend,
         };
@@ -62,7 +61,7 @@ export async function POST(request: Request) {
         try {
             const response = await admin.messaging().sendEachForMulticast(message);
             successCount = response.successCount;
-            console.log(`Push (Data Only) enviado: ${successCount}`);
+            console.log(`Push Simples enviado: ${successCount}`);
         } catch (pushError) {
             console.error("Erro push:", pushError);
         }
