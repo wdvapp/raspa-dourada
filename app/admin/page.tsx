@@ -3,7 +3,6 @@
 
 import { useEffect, useState } from 'react';
 import { db, app } from '../../lib/firebase';
-// CORREÇÃO AQUI: Adicionei 'serverTimestamp' que estava faltando
 import { collection, query, orderBy, onSnapshot, where, doc, getDoc, updateDoc, addDoc, deleteDoc, Timestamp, serverTimestamp } from 'firebase/firestore';
 import { getAuth, onAuthStateChanged } from 'firebase/auth';
 import { useRouter } from 'next/navigation';
@@ -87,9 +86,18 @@ export default function AdminDashboard() {
       setRecentUsers(snap.docs.slice(0, 5).map(doc => ({ id: doc.id, ...doc.data() })));
     });
 
-    const qSchedule = query(collection(db, 'scheduled_messages'), where('status', '==', 'pending'), orderBy('scheduledAt', 'asc'));
+    // CORREÇÃO AQUI: Removi o orderBy do Firebase para evitar erro de índice
+    const qSchedule = query(collection(db, 'scheduled_messages'), where('status', '==', 'pending'));
     const unsubSchedule = onSnapshot(qSchedule, (snap) => {
-        setScheduledList(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        // Ordenamos via Javascript aqui no cliente
+        const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        list.sort((a: any, b: any) => {
+            const dateA = a.scheduledAt?.seconds || 0;
+            const dateB = b.scheduledAt?.seconds || 0;
+            return dateA - dateB;
+        });
+        
+        setScheduledList(list);
         checkAndSendScheduled(snap.docs);
     });
 
@@ -100,10 +108,14 @@ export default function AdminDashboard() {
       const now = new Date();
       docs.forEach(async (docSnap) => {
           const data = docSnap.data();
+          if(!data.scheduledAt) return;
+          
           const scheduledTime = data.scheduledAt.toDate();
           
+          // Se já passou da hora e ainda está pendente
           if (scheduledTime <= now && data.status === 'pending') {
               console.log("Enviando mensagem agendada:", data.title);
+              // Trava imediatamente para evitar duplo envio
               await updateDoc(doc(db, 'scheduled_messages', docSnap.id), { status: 'processing' });
               
               try {
@@ -161,7 +173,7 @@ export default function AdminDashboard() {
                 body: notifBody,
                 scheduledAt: Timestamp.fromDate(scheduledDateTime),
                 status: 'pending',
-                createdAt: serverTimestamp() // AGORA VAI FUNCIONAR
+                createdAt: serverTimestamp()
             });
             alert('📅 Mensagem Agendada com Sucesso!');
             setNotifTitle(''); setNotifBody(''); setScheduleDate(''); setScheduleTime('');
