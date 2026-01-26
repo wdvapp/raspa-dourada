@@ -8,7 +8,6 @@ import { AuthModal } from '../components/AuthModal';
 import ProfileSidebar from '../components/ProfileSidebar';
 import confetti from 'canvas-confetti';
 import { db, app } from '../lib/firebase';
-// Importação corrigida e reforçada
 import { doc, getDoc, collection, getDocs, onSnapshot, updateDoc, increment, serverTimestamp, query, orderBy, addDoc } from 'firebase/firestore'; 
 import { getAuth, onAuthStateChanged, signOut } from 'firebase/auth';
 import {
@@ -102,7 +101,6 @@ export default function Home() {
 
   // --- STARTUP ---
   useEffect(() => {
-    // Inicializa sons
     if (typeof window !== 'undefined') {
         winAudioRef.current = new Audio('/win.mp3');
         bgAudioRef.current = new Audio('/music.mp3');
@@ -110,7 +108,6 @@ export default function Home() {
         bgAudioRef.current.volume = 0.3; 
     }
 
-    // PWA Install Prompt
     window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); setDeferredPrompt(e); });
 
     const auth = getAuth(app);
@@ -127,11 +124,9 @@ export default function Home() {
                 if(snap.exists()) setDailyGiftConfig(snap.data() as any);
             });
 
-            // Carrega Jogos
             const querySnapshot = await getDocs(collection(db, 'games'));
             setGamesList(querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Game[]);
 
-            // Carrega Ganhadores
             const winnersSnapshot = await getDocs(collection(db, 'winners'));
             setWinnersList(winnersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Winner[]);
         } catch (error) { console.error("Erro init:", error); }
@@ -196,14 +191,12 @@ export default function Home() {
       }
   };
 
-  // --- RESGATAR BÔNUS COM NOTIFICAÇÃO ---
   const claimDailyBonus = async () => {
       if (!user || !bonusAvailable || !dailyGiftConfig.active) return;
       setClaimingBonus(true);
       try {
           await updateDoc(doc(db, 'users', user.uid), { balance: increment(dailyGiftConfig.amount), lastDailyBonus: serverTimestamp() });
           
-          // CRIAÇÃO DA NOTIFICAÇÃO
           await addDoc(collection(db, 'users', user.uid, 'notifications'), {
             title: 'Bônus Resgatado! 🎁',
             body: `Você ganhou ${formatCurrency(dailyGiftConfig.amount)} de bônus diário!`,
@@ -359,7 +352,6 @@ export default function Home() {
 
   return (
     <>
-      {/* CORREÇÃO: Removi classes que poderiam esconder conteúdo no Desktop */}
       <div className="min-h-screen bg-zinc-950 text-white font-sans pb-24 w-full" style={{ selectionBackgroundColor: layoutConfig.color } as any}>
         <header className="fixed top-0 w-full z-40 bg-zinc-950/80 backdrop-blur-md border-b border-white/5 px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -392,10 +384,10 @@ export default function Home() {
         <div className="h-20"></div>
 
         {view === 'WINNERS' && (
-             <main className="px-4 pb-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+             <main className="px-4 pb-8 animate-in fade-in slide-in-from-bottom-4 duration-500 md:max-w-7xl md:mx-auto">
                  <div className="text-center mb-8 mt-4"><h2 className="text-2xl font-black text-white uppercase italic">Galeria de <span style={{ color: layoutConfig.color }}>Ganhadores</span></h2></div>
-                 <div className="flex flex-col gap-6">
-                     {winnersList.length > 0 ? (winnersList.map((winner, index) => { const imgUrl = winner.image || winner.url || winner.photo; if (!imgUrl) return null; return (<div key={index} className="rounded-2xl overflow-hidden border border-zinc-800 shadow-2xl relative bg-zinc-900"><img src={imgUrl} className="w-full h-auto object-cover" /> {(winner.name || winner.amount) && (<div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent flex flex-col justify-end p-6"><p className="text-yellow-500 font-black text-xl">{winner.amount ? formatCurrency(winner.amount) : ''}</p><p className="text-white font-bold">{winner.name}</p><p className="text-zinc-400 text-xs">{winner.city}</p></div>)}</div>); })) : (<div className="text-center py-20 text-zinc-500 border border-zinc-800 rounded-2xl border-dashed"><Trophy size={48} className="mx-auto mb-4 opacity-30" /><p className="text-sm">Carregando galeria...</p></div>)}
+                 <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                     {winnersList.length > 0 ? (winnersList.map((winner, index) => { const imgUrl = winner.image || winner.url || winner.photo; if (!imgUrl) return null; return (<div key={index} className="rounded-2xl overflow-hidden border border-zinc-800 shadow-2xl relative bg-zinc-900"><img src={imgUrl} className="w-full h-auto object-cover" /> {(winner.name || winner.amount) && (<div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent flex flex-col justify-end p-6"><p className="text-yellow-500 font-black text-xl">{winner.amount ? formatCurrency(winner.amount) : ''}</p><p className="text-white font-bold">{winner.name}</p><p className="text-zinc-400 text-xs">{winner.city}</p></div>)}</div>); })) : (<div className="text-center py-20 text-zinc-500 border border-zinc-800 rounded-2xl border-dashed col-span-full"><Trophy size={48} className="mx-auto mb-4 opacity-30" /><p className="text-sm">Carregando galeria...</p></div>)}
                  </div>
                  <button onClick={handleBackToLobby} className="w-full mt-8 bg-zinc-800 hover:bg-zinc-700 text-white font-bold py-4 rounded-xl">Voltar</button>
              </main>
@@ -445,17 +437,19 @@ export default function Home() {
         )}
 
         {view === 'LOBBY' && (
-          <main className="px-4 pb-8">
+          // MUDANÇA AQUI: Adicionei md:max-w-7xl para não esticar demais e centralizar
+          <main className="px-4 pb-8 md:max-w-7xl md:mx-auto">
             <div className="w-full rounded-2xl relative overflow-hidden shadow-lg border border-zinc-800 mb-8 group bg-zinc-900">
               {layoutConfig.banner ? <img src={layoutConfig.banner} className="w-full h-auto object-contain block" /> : <div className="h-52 bg-zinc-800 flex items-center justify-center font-bold text-zinc-600">Sem Banner</div>}
             </div>
             <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2"><Grid size={18} style={{ color: layoutConfig.color }} /> Destaques</h3>
-            <div className="flex flex-col gap-5">
+            {/* MUDANÇA AQUI: Era flex-col, agora é GRID (1 no mobile, 3 no PC) */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {gamesList.length > 0 ? (
                   gamesList.map((game) => {
                       const maxPrize = Math.max(...(game.prizes?.map(p => Number(p.value) || 0) || [0]));
                       return (
-                      <div key={game.id} className="bg-zinc-900 rounded-xl overflow-hidden border border-zinc-800 shadow-lg">
+                      <div key={game.id} className="bg-zinc-900 rounded-xl overflow-hidden border border-zinc-800 shadow-lg hover:border-zinc-700 transition-all">
                           <div className="w-full h-44 bg-zinc-950 relative flex items-center justify-center overflow-hidden">
                                {game.cover ? <img src={game.cover} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-zinc-600 text-xs">Sem Imagem</div>}
                           </div>
@@ -474,7 +468,7 @@ export default function Home() {
                       </div>
                       );
                   })
-              ) : <div className="text-center py-10 text-white font-bold text-lg animate-pulse">Carregando jogos...</div>}
+              ) : <div className="text-center py-10 text-white font-bold text-lg animate-pulse col-span-full">Carregando jogos...</div>}
             </div>
           </main>
         )}
