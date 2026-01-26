@@ -1,52 +1,41 @@
 import { NextResponse } from 'next/server';
-import admin from 'firebase-admin';
-
-// Inicia o Firebase Admin se ainda não estiver iniciado
-if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.cert({
-      projectId: process.env.FIREBASE_PROJECT_ID,
-      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      // Corrige a formatação da chave privada (remove quebras de linha extras se houver)
-      privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-    }),
-  });
-}
+import { db } from '@/lib/firebase';
+import { collection, getDocs, addDoc, serverTimestamp } from 'firebase/firestore';
 
 export async function POST(request: Request) {
   try {
-    const { title, body, userId } = await request.json();
+    const { title, body } = await request.json();
 
     if (!title || !body) {
-      return NextResponse.json({ error: 'Título e mensagem são obrigatórios' }, { status: 400 });
+      return NextResponse.json({ success: false, error: 'Título e mensagem são obrigatórios' }, { status: 400 });
     }
 
-    console.log(`📨 Tentando enviar notificação: "${title}"`);
+    // 1. Pega a lista de todos os usuários
+    const usersRef = collection(db, 'users');
+    const snapshot = await getDocs(usersRef);
 
-    // 1. SALVAR NO "SININHO" (Banco de Dados)
-    // Se for para TODOS, teríamos que fazer um loop (isso é pesado, faremos depois).
-    // Por enquanto, vamos focar em enviar para um usuário específico ou tópico.
-    
-    // Vamos enviar para o Tópico "all_users" (Geral)
-    // Nota: O frontend precisa inscrever o usuário nesse tópico, mas vamos focar no envio agora.
-    
-    const message = {
-      notification: {
-        title: title,
-        body: body,
-      },
-      topic: 'all_users' // Envia para todo mundo que aceitou notificação
-    };
+    if (snapshot.empty) {
+        return NextResponse.json({ success: false, message: 'Nenhum usuário encontrado para enviar.' });
+    }
 
-    // 2. ENVIAR PUSH (Celular Apita)
-    const response = await admin.messaging().send(message);
-    
-    console.log('✅ Notificação enviada com sucesso:', response);
+    // 2. Entrega a mensagem na caixa de correio de cada um
+    const deliveryJobs = snapshot.docs.map(async (userDoc) => {
+        const userId = userDoc.id;
+        
+        await addDoc(collection(db, 'users', userId, 'notifications'), {
+            title: title,
+            body: body,
+            read: false,
+            createdAt: serverTimestamp()
+        });
+    });
 
-    return NextResponse.json({ success: true, messageId: response });
+    await Promise.all(deliveryJobs);
+
+    return NextResponse.json({ success: true, count: snapshot.size });
 
   } catch (error: any) {
-    console.error('❌ Erro ao enviar notificação:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error("Erro no envio:", error);
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
