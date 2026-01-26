@@ -23,7 +23,6 @@ if (!admin.apps.length) {
 
 export async function POST(request: Request) {
   try {
-    // AGORA ACEITAMOS IMAGEM E LINK TAMBÉM
     const { title, body, image, link } = await request.json();
 
     if (!title || !body) return NextResponse.json({ success: false, error: 'Dados incompletos' }, { status: 400 });
@@ -32,8 +31,8 @@ export async function POST(request: Request) {
     const snapshot = await getDocs(usersRef);
     const tokensToSend: string[] = [];
 
+    // 1. SALVA NO BANCO (HISTÓRICO)
     const dbPromises = snapshot.docs.map(async (userDoc) => {
-        // Salva no banco com os dados extras (para histórico)
         await addDoc(collection(db, 'users', userDoc.id, 'notifications'), {
             title, body, image: image || null, link: link || '/', read: false, createdAt: serverTimestamp()
         });
@@ -47,19 +46,39 @@ export async function POST(request: Request) {
 
     await Promise.all(dbPromises);
 
+    // 2. ENVIA O PUSH (FORMATO WEBPUSH PROFISSIONAL)
     let successCount = 0;
     if (tokensToSend.length > 0 && admin.apps.length) {
-        // MONTA A MENSAGEM PROFISSIONAL
+        
         const message = {
+            // A. Dados Genéricos (Fallback)
             notification: { 
                 title, 
-                body,
-                // Se tiver imagem, manda. Se não, não manda campo.
-                ...(image && { image: image }) 
+                body 
             },
+            // B. Dados Para o Clique Manual (Service Worker)
             data: {
-                // Link escondido nos dados para o clique funcionar
                 url: link || '/' 
+            },
+            // C. CONFIGURAÇÃO ESPECÍFICA PARA NAVEGADORES (O Segredo!)
+            webpush: {
+                headers: {
+                    Urgency: "high"
+                },
+                notification: {
+                    title: title,
+                    body: body,
+                    icon: '/icon-192x192.png', // Força o ícone do App
+                    image: image || '',         // Força a Imagem Grande
+                    requireInteraction: true,   // Faz a notificação ficar na tela até clicar
+                    // Ação de clique nativa (Backup se o SW falhar)
+                    data: {
+                        url: link || '/'
+                    }
+                },
+                fcm_options: {
+                    link: link || '/' // Link nativo do Firebase
+                }
             },
             tokens: tokensToSend,
         };
