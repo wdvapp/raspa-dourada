@@ -23,10 +23,12 @@ export default function AdminDashboard() {
   const [bonusAmount, setBonusAmount] = useState(0);
   const [loadingBonus, setLoadingBonus] = useState(false);
 
-  // NOTIFICAÇÕES
+  // NOTIFICAÇÕES (ATUALIZADO COM IMAGEM E LINK)
   const [notifMode, setNotifMode] = useState<'NOW' | 'SCHEDULE'>('NOW');
   const [notifTitle, setNotifTitle] = useState('');
   const [notifBody, setNotifBody] = useState('');
+  const [notifImage, setNotifImage] = useState(''); // <--- NOVO
+  const [notifLink, setNotifLink] = useState('');   // <--- NOVO
   const [scheduleDate, setScheduleDate] = useState(''); 
   const [scheduleTime, setScheduleTime] = useState(''); 
   const [sendingPush, setSendingPush] = useState(false);
@@ -86,10 +88,8 @@ export default function AdminDashboard() {
       setRecentUsers(snap.docs.slice(0, 5).map(doc => ({ id: doc.id, ...doc.data() })));
     });
 
-    // CORREÇÃO AQUI: Removi o orderBy do Firebase para evitar erro de índice
     const qSchedule = query(collection(db, 'scheduled_messages'), where('status', '==', 'pending'));
     const unsubSchedule = onSnapshot(qSchedule, (snap) => {
-        // Ordenamos via Javascript aqui no cliente
         const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
         list.sort((a: any, b: any) => {
             const dateA = a.scheduledAt?.seconds || 0;
@@ -112,17 +112,21 @@ export default function AdminDashboard() {
           
           const scheduledTime = data.scheduledAt.toDate();
           
-          // Se já passou da hora e ainda está pendente
           if (scheduledTime <= now && data.status === 'pending') {
               console.log("Enviando mensagem agendada:", data.title);
-              // Trava imediatamente para evitar duplo envio
               await updateDoc(doc(db, 'scheduled_messages', docSnap.id), { status: 'processing' });
               
               try {
                   await fetch('/api/send-push', {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ title: data.title, body: data.body })
+                      // ATUALIZADO: ENVIA IMAGEM E LINK NO AGENDAMENTO TAMBÉM
+                      body: JSON.stringify({ 
+                          title: data.title, 
+                          body: data.body,
+                          image: data.image,
+                          link: data.link
+                      })
                   });
                   await updateDoc(doc(db, 'scheduled_messages', docSnap.id), { status: 'sent', sentAt: serverTimestamp() });
               } catch (e) {
@@ -153,10 +157,19 @@ export default function AdminDashboard() {
             const res = await fetch('/api/send-push', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ title: notifTitle, body: notifBody })
+                // ATUALIZADO: ENVIA IMAGEM E LINK
+                body: JSON.stringify({ 
+                    title: notifTitle, 
+                    body: notifBody,
+                    image: notifImage,
+                    link: notifLink
+                })
             });
             const data = await res.json();
-            if (data.success) { alert('🚀 Enviado!'); setNotifTitle(''); setNotifBody(''); } 
+            if (data.success) { 
+                alert('🚀 Enviado!'); 
+                setNotifTitle(''); setNotifBody(''); setNotifImage(''); setNotifLink('');
+            } 
             else { alert('Erro: ' + JSON.stringify(data)); }
         } catch (error) { alert('Erro de conexão.'); }
 
@@ -171,12 +184,14 @@ export default function AdminDashboard() {
             await addDoc(collection(db, 'scheduled_messages'), {
                 title: notifTitle,
                 body: notifBody,
+                image: notifImage, // Salva imagem
+                link: notifLink,   // Salva link
                 scheduledAt: Timestamp.fromDate(scheduledDateTime),
                 status: 'pending',
                 createdAt: serverTimestamp()
             });
             alert('📅 Mensagem Agendada com Sucesso!');
-            setNotifTitle(''); setNotifBody(''); setScheduleDate(''); setScheduleTime('');
+            setNotifTitle(''); setNotifBody(''); setNotifImage(''); setNotifLink(''); setScheduleDate(''); setScheduleTime('');
         } catch (e: any) {
             console.error(e); 
             alert("Erro ao agendar: " + e.message);
@@ -215,10 +230,23 @@ export default function AdminDashboard() {
                 <button onClick={() => setNotifMode('SCHEDULE')} className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${notifMode === 'SCHEDULE' ? 'bg-purple-600 text-white shadow' : 'text-zinc-500 hover:text-white'}`}>AGENDAR</button>
             </div>
             <div className="space-y-4">
-                <input type="text" placeholder="Título" value={notifTitle} onChange={(e) => setNotifTitle(e.target.value)} className="w-full bg-black/20 border border-zinc-700 rounded-xl p-3 text-white focus:border-yellow-500 outline-none" />
-                <textarea rows={2} placeholder="Mensagem" value={notifBody} onChange={(e) => setNotifBody(e.target.value)} className="w-full bg-black/20 border border-zinc-700 rounded-xl p-3 text-white focus:border-yellow-500 outline-none resize-none" />
+                <input type="text" placeholder="Título (ex: Bônus Surpresa!)" value={notifTitle} onChange={(e) => setNotifTitle(e.target.value)} className="w-full bg-black/20 border border-zinc-700 rounded-xl p-3 text-white focus:border-yellow-500 outline-none font-bold" />
+                <textarea rows={2} placeholder="Mensagem (ex: Ganhe 100% no depósito hoje)" value={notifBody} onChange={(e) => setNotifBody(e.target.value)} className="w-full bg-black/20 border border-zinc-700 rounded-xl p-3 text-white focus:border-yellow-500 outline-none resize-none text-sm" />
+                
+                {/* --- NOVOS CAMPOS VISUAIS --- */}
+                <div className="grid grid-cols-2 gap-4">
+                    <div>
+                         <label className="text-[10px] uppercase font-bold text-zinc-500 mb-1 block">URL da Imagem (Opcional)</label>
+                         <input type="text" placeholder="https://..." value={notifImage} onChange={(e) => setNotifImage(e.target.value)} className="w-full bg-black/20 border border-zinc-700 rounded-xl p-2 text-white text-xs" />
+                    </div>
+                    <div>
+                         <label className="text-[10px] uppercase font-bold text-zinc-500 mb-1 block">Link de Destino (Opcional)</label>
+                         <input type="text" placeholder="/games ou https://..." value={notifLink} onChange={(e) => setNotifLink(e.target.value)} className="w-full bg-black/20 border border-zinc-700 rounded-xl p-2 text-white text-xs" />
+                    </div>
+                </div>
+
                 {notifMode === 'SCHEDULE' && (
-                    <div className="grid grid-cols-2 gap-4 animate-in fade-in slide-in-from-top-2">
+                    <div className="grid grid-cols-2 gap-4 animate-in fade-in slide-in-from-top-2 pt-2 border-t border-zinc-800">
                         <div><label className="text-[10px] uppercase font-bold text-zinc-500 mb-1 block">Data</label><input type="date" value={scheduleDate} onChange={(e) => setScheduleDate(e.target.value)} className="w-full bg-black/20 border border-zinc-700 rounded-xl p-3 text-white text-sm" /></div>
                         <div><label className="text-[10px] uppercase font-bold text-zinc-500 mb-1 block">Hora</label><input type="time" value={scheduleTime} onChange={(e) => setScheduleTime(e.target.value)} className="w-full bg-black/20 border border-zinc-700 rounded-xl p-3 text-white text-sm" /></div>
                     </div>
