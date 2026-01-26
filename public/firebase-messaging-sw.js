@@ -1,7 +1,6 @@
 importScripts('https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-compat.js');
 
-// --- SUA CONFIGURAÇÃO (Mantenha igual) ---
 const firebaseConfig = {
   apiKey: "AIzaSyCqWPVoFbyBTcVwxjy1s8ZZFAFEZK_UOSE",
   authDomain: "raspa-dourada.firebaseapp.com",
@@ -14,32 +13,38 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const messaging = firebase.messaging();
 
-// --- A MÁGICA SIMPLIFICADA ---
-// Removemos o 'onBackgroundMessage' manual. 
-// Agora deixamos o sistema do Android exibir a notificação que vem da API automaticamente.
+// 1. DESENHA A NOTIFICAÇÃO MANUALMENTE (Modo Background)
+messaging.onBackgroundMessage((payload) => {
+  console.log('Recebido no background:', payload);
 
-// Apenas escutamos o CLIQUE para abrir o link certo
+  // Pegamos os dados que vêm dentro da gaveta "data"
+  const { title, body, image, link } = payload.data;
+
+  const notificationTitle = title;
+  const notificationOptions = {
+    body: body,
+    icon: '/icon-192x192.png', // O ícone do app
+    image: image,               // A Imagem Grande (Banner)
+    data: { url: link },        // O Link para clicar
+    vibrate: [200, 100, 200],   // Vibração
+    requireInteraction: true    // Fica na tela até a pessoa clicar ou fechar
+  };
+
+  return self.registration.showNotification(notificationTitle, notificationOptions);
+});
+
+// 2. O CLIQUE (Abre o link)
 self.addEventListener('notificationclick', function(event) {
-  console.log('Notificação clicada!');
   event.notification.close();
-
-  // Tenta pegar o link que veio na notificação ou vai para a home
-  // O link vem dentro de 'data.url' ou 'fcm_options.link' dependendo do envio
-  const urlToOpen = event.notification.data?.url || '/';
+  const urlToOpen = event.notification.data.url || '/';
 
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
-      // Se já tiver uma aba aberta, foca nela
       for (let i = 0; i < windowClients.length; i++) {
         const client = windowClients[i];
-        if (client.url === urlToOpen && 'focus' in client) {
-          return client.focus();
-        }
+        if (client.url === urlToOpen && 'focus' in client) return client.focus();
       }
-      // Se não, abre uma nova
-      if (clients.openWindow) {
-        return clients.openWindow(urlToOpen);
-      }
+      if (clients.openWindow) return clients.openWindow(urlToOpen);
     })
   );
 });

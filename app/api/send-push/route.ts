@@ -4,7 +4,6 @@ import { db } from '@/lib/firebase';
 import { collection, getDocs, addDoc, serverTimestamp } from 'firebase/firestore';
 import * as admin from 'firebase-admin';
 
-// --- CONFIGURAÇÃO DO ADMIN ---
 if (!admin.apps.length) {
   const privateKey = process.env.FIREBASE_PRIVATE_KEY 
     ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n') 
@@ -31,12 +30,10 @@ export async function POST(request: Request) {
     const snapshot = await getDocs(usersRef);
     const tokensToSend: string[] = [];
 
-    // 1. SALVA NO BANCO (HISTÓRICO)
     const dbPromises = snapshot.docs.map(async (userDoc) => {
         await addDoc(collection(db, 'users', userDoc.id, 'notifications'), {
             title, body, image: image || null, link: link || '/', read: false, createdAt: serverTimestamp()
         });
-
         const tokenSnap = await getDocs(collection(db, 'users', userDoc.id, 'fcmTokens'));
         tokenSnap.forEach(t => {
             const tokenData = t.data();
@@ -46,39 +43,18 @@ export async function POST(request: Request) {
 
     await Promise.all(dbPromises);
 
-    // 2. ENVIA O PUSH (FORMATO WEBPUSH PROFISSIONAL)
     let successCount = 0;
     if (tokensToSend.length > 0 && admin.apps.length) {
         
+        // --- A MUDANÇA MÁGICA ESTÁ AQUI ---
+        // Não usamos mais 'notification'. Mandamos tudo dentro de 'data'.
+        // Isso força o Service Worker a montar a notificação do nosso jeito.
         const message = {
-            // A. Dados Genéricos (Fallback)
-            notification: { 
-                title, 
-                body 
-            },
-            // B. Dados Para o Clique Manual (Service Worker)
             data: {
-                url: link || '/' 
-            },
-            // C. CONFIGURAÇÃO ESPECÍFICA PARA NAVEGADORES (O Segredo!)
-            webpush: {
-                headers: {
-                    Urgency: "high"
-                },
-                notification: {
-                    title: title,
-                    body: body,
-                    icon: '/icon-192x192.png', // Força o ícone do App
-                    image: image || '',         // Força a Imagem Grande
-                    requireInteraction: true,   // Faz a notificação ficar na tela até clicar
-                    // Ação de clique nativa (Backup se o SW falhar)
-                    data: {
-                        url: link || '/'
-                    }
-                },
-                fcm_options: {
-                    link: link || '/' // Link nativo do Firebase
-                }
+                title: title,
+                body: body,
+                image: image || "", // Se não tiver imagem, manda vazio
+                link: link || "/"   // Se não tiver link, manda home
             },
             tokens: tokensToSend,
         };
@@ -86,7 +62,7 @@ export async function POST(request: Request) {
         try {
             const response = await admin.messaging().sendEachForMulticast(message);
             successCount = response.successCount;
-            console.log(`Push enviado: ${successCount}`);
+            console.log(`Push (Data Only) enviado: ${successCount}`);
         } catch (pushError) {
             console.error("Erro push:", pushError);
         }
