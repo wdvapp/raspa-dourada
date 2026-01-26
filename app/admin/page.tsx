@@ -10,14 +10,13 @@ import { DollarSign, Users, TrendingUp, Calendar, Megaphone, Gift, Save, Send, L
 export default function AdminDashboard() {
   const router = useRouter();
   const [isAuthorized, setIsAuthorized] = useState(false);
-  const [checkingAuth, setCheckingAuth] = useState(true); // Novo estado para loading da tela
+  const [checkingAuth, setCheckingAuth] = useState(true);
 
   // --- ESTADOS DO DASHBOARD ---
   const [stats, setStats] = useState({ todayRevenue: 0, weekRevenue: 0, totalUsers: 0 });
   const [recentDeposits, setRecentDeposits] = useState<any[]>([]);
   const [recentUsers, setRecentUsers] = useState<any[]>([]);
-  const [loadingData, setLoadingData] = useState(false);
-
+  
   // --- ESTADOS DE MARKETING ---
   const [bonusActive, setBonusActive] = useState(false);
   const [bonusAmount, setBonusAmount] = useState(0);
@@ -26,30 +25,27 @@ export default function AdminDashboard() {
   const [notifBody, setNotifBody] = useState('');
   const [sendingPush, setSendingPush] = useState(false);
 
-  // --- 1. VERIFICAÇÃO PROFISSIONAL (RBAC) ---
+  // --- 1. GUARDIÃO INVISÍVEL (MODO FANTASMA) ---
   useEffect(() => {
     const auth = getAuth(app);
-    const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
-      if (user) {
-        // O usuário está logado, agora vamos ver se ele é CHEFE no banco de dados
+    const unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
+      if (currentUser) {
         try {
-            const userDocRef = doc(db, 'users', user.uid);
+            // Verifica no banco se tem a etiqueta 'admin'
+            const userDocRef = doc(db, 'users', currentUser.uid);
             const userSnap = await getDoc(userDocRef);
 
             if (userSnap.exists() && userSnap.data().role === 'admin') {
-                // É patrão! Libera o acesso.
-                setIsAuthorized(true);
+                setIsAuthorized(true); // Abre a sala secreta
             } else {
-                // É usuário comum tentando ser esperto. Tchau.
-                router.push('/');
+                router.replace('/'); // Chuta silenciosamente
             }
         } catch (error) {
-            console.error("Erro ao verificar permissão:", error);
-            router.push('/');
+            console.error("Erro verificação", error);
+            router.replace('/'); // Na dúvida, chuta
         }
       } else {
-        // Nem logado está
-        router.push('/'); 
+        router.replace('/'); // Não tá logado? Chuta pra Home
       }
       setCheckingAuth(false);
     });
@@ -57,19 +53,17 @@ export default function AdminDashboard() {
     return () => unsubscribeAuth();
   }, [router]);
 
-  // --- 2. CARREGAMENTO DE DADOS (SÓ RODA SE FOR ADMIN) ---
+  // --- 2. CARREGAMENTO DE DADOS ---
   useEffect(() => {
     if (!isAuthorized) return;
-    setLoadingData(true);
 
     const loadConfig = async () => {
         try {
             const docRef = doc(db, 'config', 'daily_gift');
             const docSnap = await getDoc(docRef);
             if (docSnap.exists()) {
-                const data = docSnap.data();
-                setBonusActive(data.active);
-                setBonusAmount(data.amount);
+                setBonusActive(docSnap.data().active);
+                setBonusAmount(docSnap.data().amount);
             }
         } catch (e) { console.error(e); }
     };
@@ -101,7 +95,6 @@ export default function AdminDashboard() {
     const unsubscribeUsers = onSnapshot(qUsers, (snapshot) => {
       setStats(prev => ({ ...prev, totalUsers: snapshot.size }));
       setRecentUsers(snapshot.docs.slice(0, 5).map(doc => ({ id: doc.id, ...doc.data() })));
-      setLoadingData(false);
     });
 
     return () => { unsubscribeDeposits(); unsubscribeUsers(); };
@@ -133,18 +126,12 @@ export default function AdminDashboard() {
     setSendingPush(false);
   };
 
-  // TELA DE VERIFICAÇÃO (Loading seguro)
-  if (checkingAuth) {
-      return (
-          <div className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center gap-4">
-              <Loader2 className="animate-spin text-purple-500" size={40} />
-              <p className="text-zinc-500 text-sm font-medium">Verificando credenciais de administrador...</p>
-          </div>
-      );
+  // --- O SEGREDO DA INVISIBILIDADE ---
+  // Enquanto verifica ou se não for autorizado, retorna NULL (Tela em branco total)
+  // Isso impede que a pessoa veja "Login" ou "Acesso Negado" antes de ser redirecionada.
+  if (checkingAuth || !isAuthorized) {
+      return null; 
   }
-
-  // Se não estiver autorizado, o useEffect já chutou para a Home, mas retornamos null por segurança
-  if (!isAuthorized) return null;
 
   return (
     <div className="max-w-6xl mx-auto space-y-8 animate-in fade-in duration-500 pb-20 p-6">
@@ -156,47 +143,25 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* CARDS DE FATURAMENTO */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="bg-gradient-to-br from-green-900 to-green-950 border border-green-800 p-8 rounded-3xl relative overflow-hidden group">
-            <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:scale-110 transition-transform">
-                <DollarSign size={100} />
-            </div>
-            <p className="text-green-400 font-bold uppercase tracking-wider text-sm mb-2 flex items-center gap-2">
-                <TrendingUp size={16} /> Faturamento Hoje
-            </p>
-            <h2 className="text-5xl font-black text-white">
-                R$ {stats.todayRevenue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-            </h2>
+            <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:scale-110 transition-transform"><DollarSign size={100} /></div>
+            <p className="text-green-400 font-bold uppercase tracking-wider text-sm mb-2 flex items-center gap-2"><TrendingUp size={16} /> Faturamento Hoje</p>
+            <h2 className="text-5xl font-black text-white">R$ {stats.todayRevenue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</h2>
         </div>
-
         <div className="bg-zinc-900 border border-zinc-800 p-8 rounded-3xl relative overflow-hidden">
-            <div className="absolute top-0 right-0 p-8 opacity-5">
-                <Calendar size={100} className="text-[#ffc700]" />
-            </div>
-            <p className="text-zinc-500 font-bold uppercase tracking-wider text-sm mb-2">
-                Últimos 7 Dias
-            </p>
-            <h2 className="text-5xl font-black text-white">
-                R$ {stats.weekRevenue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-            </h2>
+            <div className="absolute top-0 right-0 p-8 opacity-5"><Calendar size={100} className="text-[#ffc700]" /></div>
+            <p className="text-zinc-500 font-bold uppercase tracking-wider text-sm mb-2">Últimos 7 Dias</p>
+            <h2 className="text-5xl font-black text-white">R$ {stats.weekRevenue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</h2>
         </div>
       </div>
 
-      {/* CENTRAL DE MARKETING */}
-      <h2 className="text-2xl font-bold text-white flex items-center gap-2 mt-4">
-          <Megaphone className="text-purple-500" /> Central de Marketing
-      </h2>
-      
+      <h2 className="text-2xl font-bold text-white flex items-center gap-2 mt-4"><Megaphone className="text-purple-500" /> Central de Marketing</h2>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          {/* CONTROLE DO BÔNUS */}
           <div className="bg-zinc-900 p-6 rounded-2xl border border-zinc-800 shadow-xl">
             <div className="flex items-center gap-3 mb-6 pb-4 border-b border-zinc-800">
                 <div className="p-3 bg-purple-500/20 rounded-full text-purple-400"><Gift size={24} /></div>
-                <div>
-                    <h3 className="text-lg font-bold text-white">Bônus Diário</h3>
-                    <p className="text-xs text-zinc-500">Valor que o usuário ganha a cada 24h.</p>
-                </div>
+                <div><h3 className="text-lg font-bold text-white">Bônus Diário</h3><p className="text-xs text-zinc-500">Valor que o usuário ganha a cada 24h.</p></div>
             </div>
             <div className="space-y-5">
                 <div className="flex items-center justify-between bg-black/20 p-4 rounded-xl border border-zinc-700/50">
@@ -205,24 +170,16 @@ export default function AdminDashboard() {
                     <div className={`absolute top-1 w-6 h-6 bg-white rounded-full transition-all shadow-md ${bonusActive ? 'left-7' : 'left-1'}`}></div>
                     </button>
                 </div>
-                <div>
-                    <label className="block text-xs font-bold text-zinc-500 uppercase mb-2">Valor (R$)</label>
-                    <input type="number" value={bonusAmount} onChange={(e) => setBonusAmount(Number(e.target.value))} className="w-full bg-black/20 border border-zinc-700 rounded-xl py-3 px-4 text-white font-bold text-lg focus:border-purple-500 outline-none" />
-                </div>
+                <div><label className="block text-xs font-bold text-zinc-500 uppercase mb-2">Valor (R$)</label><input type="number" value={bonusAmount} onChange={(e) => setBonusAmount(Number(e.target.value))} className="w-full bg-black/20 border border-zinc-700 rounded-xl py-3 px-4 text-white font-bold text-lg focus:border-purple-500 outline-none" /></div>
                 <button onClick={handleSaveBonus} disabled={loadingBonus} className="w-full bg-purple-600 hover:bg-purple-500 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 mt-2 transition-all active:scale-95">
                     {loadingBonus ? <Loader2 className="animate-spin" /> : <Save size={18} />} SALVAR
                 </button>
             </div>
           </div>
-
-          {/* ENVIAR NOTIFICAÇÃO */}
           <div className="bg-zinc-900 p-6 rounded-2xl border border-zinc-800 shadow-xl">
             <div className="flex items-center gap-3 mb-6 pb-4 border-b border-zinc-800">
                 <div className="p-3 bg-yellow-500/20 rounded-full text-yellow-500"><Megaphone size={24} /></div>
-                <div>
-                    <h3 className="text-lg font-bold text-white">Enviar Notificação</h3>
-                    <p className="text-xs text-zinc-500">Dispara para celular e sininho de todos.</p>
-                </div>
+                <div><h3 className="text-lg font-bold text-white">Enviar Notificação</h3><p className="text-xs text-zinc-500">Dispara para celular e sininho de todos.</p></div>
             </div>
             <div className="space-y-4">
                 <input type="text" placeholder="Título" value={notifTitle} onChange={(e) => setNotifTitle(e.target.value)} className="w-full bg-black/20 border border-zinc-700 rounded-xl p-3 text-white focus:border-yellow-500 outline-none" />
@@ -235,7 +192,6 @@ export default function AdminDashboard() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-8">
-        {/* LISTA DE DEPÓSITOS */}
         <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden">
             <div className="p-6 border-b border-zinc-800 flex justify-between items-center"><h3 className="font-bold text-white flex items-center gap-2"><DollarSign className="text-green-500" size={20}/> Últimos Depósitos</h3></div>
             <div className="divide-y divide-zinc-800">
@@ -247,7 +203,6 @@ export default function AdminDashboard() {
                 )) : <div className="p-8 text-center text-zinc-500 text-sm">Nenhum depósito hoje.</div>}
             </div>
         </div>
-        {/* LISTA DE USUÁRIOS */}
         <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden">
             <div className="p-6 border-b border-zinc-800 flex justify-between items-center"><h3 className="font-bold text-white flex items-center gap-2"><Users className="text-[#ffc700]" size={20}/> Novos Usuários ({stats.totalUsers})</h3></div>
             <div className="divide-y divide-zinc-800">
