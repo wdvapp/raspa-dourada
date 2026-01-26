@@ -6,12 +6,12 @@ const inter = Inter({ subsets: ["latin"] });
 
 // --- CONFIGURAÇÃO PWA ---
 export const metadata: Metadata = {
-  title: "Raspa Dourada",
-  description: "A melhor raspadinha online do Brasil",
-  manifest: "/manifest.json", 
+  title: "Raspa Dourada", 
+  description: "O melhor app de raspadinhas",
+  manifest: '/manifest.json', // <--- ISSO GARANTE QUE O APP (192/512) FUNCIONE
   icons: {
-    icon: "/icon-192x192.png",
-    apple: "/icon-192x192.png", 
+    icon: '/icon.png', // <--- ISSO GARANTE O FAVICON NA ABA
+    apple: '/icon.png', // Opcional: para iPhone
   },
 };
 
