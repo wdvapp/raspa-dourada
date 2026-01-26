@@ -9,7 +9,8 @@ import ProfileSidebar from '../components/ProfileSidebar';
 // import NotificationManager from '../components/NotificationManager';
 import confetti from 'canvas-confetti';
 import { db, app } from '../lib/firebase';
-import { doc, getDoc, collection, getDocs, onSnapshot, updateDoc, increment, serverTimestamp, query, orderBy } from 'firebase/firestore'; 
+// ALTERAÇÃO 1: Adicionei addDoc na importação
+import { doc, getDoc, collection, getDocs, onSnapshot, updateDoc, increment, serverTimestamp, query, orderBy, addDoc } from 'firebase/firestore'; 
 import { getAuth, onAuthStateChanged, signOut } from 'firebase/auth';
 import {
   User, Trophy, ChevronLeft, Home as HomeIcon, Grid, PlusCircle, Bell, Zap, Star, XCircle, RotateCw, Gift, ChevronRight, Play, X, Clock, Download
@@ -198,11 +199,21 @@ export default function Home() {
       }
   };
 
+  // ALTERAÇÃO 2: Função atualizada para enviar notificação
   const claimDailyBonus = async () => {
       if (!user || !bonusAvailable || !dailyGiftConfig.active) return;
       setClaimingBonus(true);
       try {
           await updateDoc(doc(db, 'users', user.uid), { balance: increment(dailyGiftConfig.amount), lastDailyBonus: serverTimestamp() });
+          
+          // Adiciona notificação ao usuário
+          await addDoc(collection(db, 'users', user.uid, 'notifications'), {
+            title: 'Bônus Resgatado! 🎁',
+            body: `Você ganhou ${formatCurrency(dailyGiftConfig.amount)} de bônus diário!`,
+            read: false,
+            createdAt: serverTimestamp()
+          });
+
           triggerWin(); 
           setShowMysteryBox(false);
       } catch (error) { console.error(error); } finally { setClaimingBonus(false); }
@@ -374,8 +385,8 @@ export default function Home() {
 
   return (
     <>
-      <div className="md:hidden min-h-screen bg-zinc-950 text-white font-sans pb-24" style={{ selectionBackgroundColor: layoutConfig.color } as any}>
-        <header className="fixed top-0 w-full z-40 bg-zinc-950/80 backdrop-blur-md border-b border-white/5 px-4 h-16 flex items-center justify-between">
+      <div className="min-h-screen bg-zinc-950 text-white font-sans pb-24 md:max-w-md md:mx-auto md:border-x md:border-zinc-800 md:shadow-2xl" style={{ selectionBackgroundColor: layoutConfig.color } as any}>
+        <header className="fixed top-0 w-full z-40 bg-zinc-950/80 backdrop-blur-md border-b border-white/5 px-4 h-16 flex items-center justify-between md:max-w-md md:mx-auto">
           <div className="flex items-center gap-3">
             {view !== 'LOBBY' ? (
               <button onClick={handleBackToLobby} className="p-2 -ml-2 text-zinc-400 hover:text-white"><ChevronLeft size={28} /></button>
@@ -458,42 +469,7 @@ export default function Home() {
           </main>
         )}
 
-        {view === 'LOBBY' && (
-          <main className="px-4 pb-8">
-            <div className="w-full rounded-2xl relative overflow-hidden shadow-lg border border-zinc-800 mb-8 group bg-zinc-900">
-              {layoutConfig.banner ? <img src={layoutConfig.banner} className="w-full h-auto object-contain block" /> : <div className="h-52 bg-zinc-800 flex items-center justify-center font-bold text-zinc-600">Sem Banner</div>}
-            </div>
-            <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2"><Grid size={18} style={{ color: layoutConfig.color }} /> Destaques</h3>
-            <div className="flex flex-col gap-5">
-              {gamesList.length > 0 ? (
-                  gamesList.map((game) => {
-                      const maxPrize = Math.max(...(game.prizes?.map(p => Number(p.value) || 0) || [0]));
-                      return (
-                      <div key={game.id} className="bg-zinc-900 rounded-xl overflow-hidden border border-zinc-800 shadow-lg">
-                          <div className="w-full h-44 bg-zinc-950 relative flex items-center justify-center overflow-hidden">
-                               {game.cover ? <img src={game.cover} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-zinc-600 text-xs">Sem Imagem</div>}
-                          </div>
-                          <div className="p-4 flex flex-col gap-1 items-start text-left">
-                              <h3 className="text-white font-bold text-lg leading-tight">{game.name}</h3>
-                              <span className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: layoutConfig.color }}>PRÊMIOS DE ATÉ {formatCurrency(maxPrize)}</span>
-                              <div className="w-full flex items-center justify-between mt-auto">
-                                  <button onClick={() => handleOpenGame(game)} className="flex items-center gap-2 px-4 py-2 rounded-lg transition-transform active:scale-95 hover:brightness-110" style={{ backgroundColor: layoutConfig.color }}>
-                                      <div className="w-4 h-4 rounded-full bg-black/20 flex items-center justify-center"><Zap size={10} className="text-black fill-current" /></div>
-                                      <span className="text-black font-black text-sm uppercase">JOGAR</span>
-                                      <div className="bg-black/20 px-1.5 py-0.5 rounded text-[10px] font-bold text-black">{formatCurrency(game.price)}</div>
-                                  </button>
-                                  <button onClick={(e) => { e.stopPropagation(); setPreviewGame(game); }} className="flex items-center gap-1 text-[10px] font-bold text-zinc-400 hover:text-white"><Gift size={12} /> VER PRÊMIOS <ChevronRight size={10} /></button>
-                              </div>
-                          </div>
-                      </div>
-                      );
-                  })
-              ) : <div className="text-center py-10 text-zinc-500 text-sm">Carregando...</div>}
-            </div>
-          </main>
-        )}
-
-        <div className="fixed bottom-0 w-full bg-zinc-950/95 backdrop-blur-md border-t border-zinc-800 pb-2 pt-2 px-0 z-50 h-[80px] grid grid-cols-5 items-center">
+        <div className="fixed bottom-0 w-full bg-zinc-950/95 backdrop-blur-md border-t border-zinc-800 pb-2 pt-2 px-0 z-50 h-[80px] grid grid-cols-5 items-center md:max-w-md md:mx-auto">
           <button onClick={handleBackToLobby} className={`flex flex-col items-center justify-center gap-1 h-full ${view === 'LOBBY' ? '' : 'text-zinc-500'}`} style={view === 'LOBBY' ? { color: layoutConfig.color } : {}}><HomeIcon size={24} strokeWidth={view === 'LOBBY' ? 3 : 2} /> <span className="text-[10px] font-medium">Início</span></button>
           <button onClick={() => user ? setShowMysteryBox(true) : setIsAuthOpen(true)} className={`flex flex-col items-center justify-center gap-1 h-full ${showMysteryBox ? 'text-white' : 'text-zinc-500'}`}><Gift size={24} /> <span className="text-[10px] font-medium">Surpresa</span></button>
           <div className="relative h-full flex items-center justify-center"><button onClick={handleOpenDeposit} className="absolute -top-8 text-black p-4 rounded-full transition-transform active:scale-95 border-4 border-zinc-950 shadow-xl" style={{ backgroundColor: layoutConfig.color, boxShadow: `0 0 20px ${layoutConfig.color}66` }}><PlusCircle size={32} strokeWidth={2.5} /></button></div>
@@ -541,8 +517,9 @@ export default function Home() {
          </div>
       )}
 
+      {/* ALTERAÇÃO 3: Popup corrigido para Overlay */}
       {showPopup && (
-        <div className="min-h-screen bg-zinc-950 text-white font-sans pb-24 md:max-w-md md:mx-auto md:border-x md:border-zinc-800 md:shadow-2xl" style={{ selectionBackgroundColor: layoutConfig.color } as any}>
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm flex items-center justify-center z-[70] p-6 animate-in fade-in">
           <div className="w-full max-w-sm bg-zinc-900 rounded-3xl p-6 border border-zinc-800 text-center relative shadow-2xl">
             <div className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 border-4 ${resultType === 'WIN' ? 'text-black shadow-lg' : 'bg-zinc-800 border-zinc-700 text-zinc-500'}`} style={resultType === 'WIN' ? { backgroundColor: layoutConfig.color, borderColor: '#fff' } : {}}>{resultType === 'WIN' ? <Trophy size={40} className="fill-current" /> : <XCircle size={40} />}</div>
             <h2 className="text-2xl font-black text-white mb-2 uppercase italic">{resultType === 'WIN' ? 'Parabéns!' : 'Não foi dessa vez'}</h2>
@@ -558,4 +535,4 @@ export default function Home() {
       <ProfileSidebar isOpen={isProfileOpen} onClose={() => setIsProfileOpen(false)} user={user} balance={balance} onLogout={handleLogout} />
     </>
   );
-} 
+}
