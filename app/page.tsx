@@ -7,11 +7,14 @@ import DepositModal from '../components/DepositModal';
 import { AuthModal } from '../components/AuthModal'; 
 import ProfileSidebar from '../components/ProfileSidebar';
 import confetti from 'canvas-confetti';
-import { db, app } from '../lib/firebase';
-import { doc, getDoc, collection, getDocs, onSnapshot, updateDoc, increment, serverTimestamp, query, orderBy, addDoc, writeBatch } from 'firebase/firestore'; 
+// IMPORTANTE: Adicionei 'messaging' aqui na importação
+import { db, app, messaging } from '../lib/firebase';
+// IMPORTANTE: Adicionei 'setDoc' e 'getToken' aqui
+import { doc, getDoc, collection, getDocs, onSnapshot, updateDoc, increment, serverTimestamp, query, orderBy, addDoc, writeBatch, setDoc } from 'firebase/firestore'; 
+import { getToken } from 'firebase/messaging'; 
 import { getAuth, onAuthStateChanged, signOut } from 'firebase/auth';
 import {
-  User, Trophy, ChevronLeft, Home as HomeIcon, Grid, PlusCircle, Bell, Zap, Star, XCircle, RotateCw, Gift, ChevronRight, X, Clock, Download
+  User, Trophy, ChevronLeft, Home as HomeIcon, Grid, PlusCircle, Bell, Zap, Star, XCircle, RotateCw, Gift, ChevronRight, X, Clock, Download, CheckCircle
 } from 'lucide-react';
 
 // --- INTERFACES ---
@@ -38,7 +41,7 @@ export default function Home() {
   
   // TOAST (NOTIFICAÇÃO FLUTUANTE)
   const [toast, setToast] = useState<{ visible: boolean; title: string; msg: string }>({ visible: false, title: '', msg: '' });
-  const lastMsgIdRef = useRef<string | null>(null); // Memória para saber qual foi a última mensagem vista
+  const lastMsgIdRef = useRef<string | null>(null); 
 
   const [previewGame, setPreviewGame] = useState<Game | null>(null);
   const [showMysteryBox, setShowMysteryBox] = useState(false);
@@ -96,10 +99,45 @@ export default function Home() {
     };
     initData();
 
-    const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
+    const unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
       if (currentUser) {
         setIsAuthOpen(false); 
+        
+        // --- ATIVAÇÃO DAS NOTIFICAÇÕES (PUSH) - NOVO CÓDIGO ---
+        if (messaging) {
+            try {
+                // Pede permissão ao navegador
+                const permission = await Notification.requestPermission();
+                
+                if (permission === 'granted') {
+                    // Pega o Token (Chave do dispositivo)
+                    const token = await getToken(messaging, { 
+                        // ======================================================
+                        // COLE SUA CHAVE VAPID AQUI DENTRO DAS ASPAS:
+                        vapidKey: "BPUzpe58R6mf4HTkyE2USvrJ_WLDzGIktfSMOTgvCOQ4hQXJzS2_0pAXljY8MXV112CEhmoz75-zpTbiaAJqe6s" 
+                        // ======================================================
+                    }).catch((err) => {
+                        console.log("Erro token:", err);
+                        return null;
+                    });
+
+                    if (token) {
+                        // Salva no banco para o Admin usar depois
+                        await setDoc(doc(db, 'users', currentUser.uid, 'fcmTokens', token), {
+                            token: token,
+                            createdAt: serverTimestamp(),
+                            device: navigator.userAgent
+                        });
+                        console.log("Token salvo:", token);
+                    }
+                }
+            } catch (err) {
+                console.log("Erro notificação:", err);
+            }
+        }
+        // -------------------------------------------------------
+
         const userDocRef = doc(db, 'users', currentUser.uid);
         unsubscribeSnapshot = onSnapshot(userDocRef, (docSnap) => {
             if (docSnap.exists()) {
@@ -109,25 +147,18 @@ export default function Home() {
             }
         });
 
-        // MONITORAMENTO DE NOTIFICAÇÕES (LÓGICA CORRIGIDA)
         const notifQuery = query(collection(db, 'users', currentUser.uid, 'notifications'), orderBy('createdAt', 'desc'));
         unsubscribeNotifs = onSnapshot(notifQuery, (snapshot) => {
             const msgs = snapshot.docs.map(d => ({ id: d.id, ...d.data() })) as NotificationMsg[];
             
-            // Se tem mensagens
             if (msgs.length > 0) {
                 const newest = msgs[0];
-                
-                // Se o ID da nova mensagem for diferente da última que vimos, E ela não foi lida
                 if (lastMsgIdRef.current !== newest.id && !newest.read) {
-                    // Evita disparar no primeiro carregamento da página (se já tiver msg antiga não lida)
                     if (lastMsgIdRef.current !== null) {
                         triggerToast(newest.title, newest.body);
                     }
                     lastMsgIdRef.current = newest.id;
                 }
-                
-                // Inicializa a ref no primeiro load
                 if (lastMsgIdRef.current === null) lastMsgIdRef.current = newest.id;
             }
             setNotifications(msgs);
@@ -148,14 +179,13 @@ export default function Home() {
   }, []);
 
   const triggerToast = (title: string, msg: string) => {
-      // Toca um som sutil de notificação (opcional, usando o win bem baixinho ou removendo)
       if (winAudioRef.current) { 
           const audio = winAudioRef.current.cloneNode() as HTMLAudioElement;
           audio.volume = 0.2;
           audio.play().catch(() => {});
       }
       setToast({ visible: true, title, msg });
-      setTimeout(() => setToast(prev => ({ ...prev, visible: false })), 5000); // 5 segundos
+      setTimeout(() => setToast(prev => ({ ...prev, visible: false })), 5000);
   };
 
   useEffect(() => {
