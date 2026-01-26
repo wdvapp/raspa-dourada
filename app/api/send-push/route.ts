@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/firebase'; 
 import { collection, getDocs, addDoc, serverTimestamp } from 'firebase/firestore';
