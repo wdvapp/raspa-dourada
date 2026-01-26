@@ -3,7 +3,8 @@
 
 import { useEffect, useState } from 'react';
 import { db, app } from '../../lib/firebase';
-import { collection, query, orderBy, onSnapshot, where, doc, getDoc, updateDoc, addDoc, deleteDoc, Timestamp } from 'firebase/firestore';
+// CORREÇÃO AQUI: Adicionei 'serverTimestamp' que estava faltando
+import { collection, query, orderBy, onSnapshot, where, doc, getDoc, updateDoc, addDoc, deleteDoc, Timestamp, serverTimestamp } from 'firebase/firestore';
 import { getAuth, onAuthStateChanged } from 'firebase/auth';
 import { useRouter } from 'next/navigation';
 import { DollarSign, Users, TrendingUp, Calendar, Megaphone, Gift, Save, Send, Loader2, Lock, Clock, Trash2, CheckCircle } from 'lucide-react';
@@ -152,7 +153,6 @@ export default function AdminDashboard() {
             alert("Escolha data e hora."); setSendingPush(false); return;
         }
         
-        // CORREÇÃO DATA:
         const scheduledDateTime = new Date(`${scheduleDate}T${scheduleTime}`);
         
         try {
@@ -161,12 +161,11 @@ export default function AdminDashboard() {
                 body: notifBody,
                 scheduledAt: Timestamp.fromDate(scheduledDateTime),
                 status: 'pending',
-                createdAt: serverTimestamp()
+                createdAt: serverTimestamp() // AGORA VAI FUNCIONAR
             });
             alert('📅 Mensagem Agendada com Sucesso!');
             setNotifTitle(''); setNotifBody(''); setScheduleDate(''); setScheduleTime('');
         } catch (e: any) {
-            // MOSTRA O ERRO REAL PARA DEBBUGAR
             console.error(e); 
             alert("Erro ao agendar: " + e.message);
         }
