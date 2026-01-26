@@ -1,7 +1,7 @@
 importScripts('https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-compat.js');
 
-// --- SUA CONFIGURAÇÃO (Mantenha a que você já tem ou use esta se for a mesma) ---
+// --- SUA CONFIGURAÇÃO (Mantenha igual) ---
 const firebaseConfig = {
   apiKey: "AIzaSyCqWPVoFbyBTcVwxjy1s8ZZFAFEZK_UOSE",
   authDomain: "raspa-dourada.firebaseapp.com",
@@ -14,36 +14,19 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const messaging = firebase.messaging();
 
-// 1. RECEBER A NOTIFICAÇÃO NO BACKGROUND
-messaging.onBackgroundMessage((payload) => {
-  console.log('Notificação recebida no background:', payload);
+// --- A MÁGICA SIMPLIFICADA ---
+// Removemos o 'onBackgroundMessage' manual. 
+// Agora deixamos o sistema do Android exibir a notificação que vem da API automaticamente.
 
-  const notificationTitle = payload.notification.title;
-  const notificationOptions = {
-    body: payload.notification.body,
-    icon: '/icon-192x192.png', // Seu ícone oficial (certifique-se que ele existe na pasta public)
-    image: payload.notification.image, // A imagem grande (Banner)
-    data: {
-      url: payload.data?.url || '/' // O link para onde vamos levar o usuário
-    },
-    vibrate: [200, 100, 200, 100, 200, 100, 200], // Vibração mais longa e chamativa
-    actions: [
-      { action: 'open_url', title: 'Ver Agora' } // Botão de ação
-    ]
-  };
-
-  self.registration.showNotification(notificationTitle, notificationOptions);
-});
-
-// 2. O QUE FAZER QUANDO CLICAR NA NOTIFICAÇÃO
+// Apenas escutamos o CLIQUE para abrir o link certo
 self.addEventListener('notificationclick', function(event) {
   console.log('Notificação clicada!');
-  event.notification.close(); // Fecha a notificação da barra
+  event.notification.close();
 
-  // Pega o link que enviamos junto (ou vai para a home)
-  const urlToOpen = event.notification.data.url || '/';
+  // Tenta pegar o link que veio na notificação ou vai para a home
+  // O link vem dentro de 'data.url' ou 'fcm_options.link' dependendo do envio
+  const urlToOpen = event.notification.data?.url || '/';
 
-  // Abre o navegador no link certo
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
       // Se já tiver uma aba aberta, foca nela
