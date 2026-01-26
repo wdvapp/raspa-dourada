@@ -6,14 +6,13 @@ import ScratchCard from '../components/ScratchCard';
 import DepositModal from '../components/DepositModal';
 import { AuthModal } from '../components/AuthModal'; 
 import ProfileSidebar from '../components/ProfileSidebar';
-// import NotificationManager from '../components/NotificationManager';
 import confetti from 'canvas-confetti';
 import { db, app } from '../lib/firebase';
-// ALTERAÇÃO 1: Adicionei addDoc na importação
+// Importação corrigida e reforçada
 import { doc, getDoc, collection, getDocs, onSnapshot, updateDoc, increment, serverTimestamp, query, orderBy, addDoc } from 'firebase/firestore'; 
 import { getAuth, onAuthStateChanged, signOut } from 'firebase/auth';
 import {
-  User, Trophy, ChevronLeft, Home as HomeIcon, Grid, PlusCircle, Bell, Zap, Star, XCircle, RotateCw, Gift, ChevronRight, Play, X, Clock, Download
+  User, Trophy, ChevronLeft, Home as HomeIcon, Grid, PlusCircle, Bell, Zap, Star, XCircle, RotateCw, Gift, ChevronRight, X, Clock, Download
 } from 'lucide-react';
 
 // --- INTERFACES ---
@@ -52,7 +51,7 @@ interface NotificationMsg {
 }
 
 export default function Home() {
-  // --- ESTADOS GERAIS (Recuperados) ---
+  // --- ESTADOS GERAIS ---
   const [user, setUser] = useState<any>(null);
   const [balance, setBalance] = useState(0); 
   const [view, setView] = useState<'LOBBY' | 'GAME' | 'WINNERS'>('LOBBY');
@@ -106,14 +105,12 @@ export default function Home() {
     // Inicializa sons
     if (typeof window !== 'undefined') {
         winAudioRef.current = new Audio('/win.mp3');
-        
-        // Música de fundo
         bgAudioRef.current = new Audio('/music.mp3');
         bgAudioRef.current.loop = true;
-        bgAudioRef.current.volume = 0.3; // Volume ambiente
+        bgAudioRef.current.volume = 0.3; 
     }
 
-    // Captura evento de instalação do PWA
+    // PWA Install Prompt
     window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); setDeferredPrompt(e); });
 
     const auth = getAuth(app);
@@ -130,9 +127,11 @@ export default function Home() {
                 if(snap.exists()) setDailyGiftConfig(snap.data() as any);
             });
 
+            // Carrega Jogos
             const querySnapshot = await getDocs(collection(db, 'games'));
             setGamesList(querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Game[]);
 
+            // Carrega Ganhadores
             const winnersSnapshot = await getDocs(collection(db, 'winners'));
             setWinnersList(winnersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Winner[]);
         } catch (error) { console.error("Erro init:", error); }
@@ -173,14 +172,12 @@ export default function Home() {
     };
   }, []);
 
-  // --- CONTROLE DE MÚSICA (Lobby vs Jogo) ---
+  // --- CONTROLE DE MÚSICA ---
   useEffect(() => {
       if (!bgAudioRef.current) return;
       if (view === 'GAME') {
-          // Tenta tocar ao entrar no jogo
           bgAudioRef.current.play().catch(() => {});
       } else {
-          // Pausa ao sair
           bgAudioRef.current.pause();
           bgAudioRef.current.currentTime = 0;
       }
@@ -199,14 +196,14 @@ export default function Home() {
       }
   };
 
-  // ALTERAÇÃO 2: Função atualizada para enviar notificação
+  // --- RESGATAR BÔNUS COM NOTIFICAÇÃO ---
   const claimDailyBonus = async () => {
       if (!user || !bonusAvailable || !dailyGiftConfig.active) return;
       setClaimingBonus(true);
       try {
           await updateDoc(doc(db, 'users', user.uid), { balance: increment(dailyGiftConfig.amount), lastDailyBonus: serverTimestamp() });
           
-          // Adiciona notificação ao usuário
+          // CRIAÇÃO DA NOTIFICAÇÃO
           await addDoc(collection(db, 'users', user.uid, 'notifications'), {
             title: 'Bônus Resgatado! 🎁',
             body: `Você ganhou ${formatCurrency(dailyGiftConfig.amount)} de bônus diário!`,
@@ -219,7 +216,7 @@ export default function Home() {
       } catch (error) { console.error(error); } finally { setClaimingBonus(false); }
   };
 
-  // --- NAVEGAÇÃO & JOGO (CORRIGIDOS) ---
+  // --- NAVEGAÇÃO & JOGO ---
   const handleOpenDeposit = () => user ? setIsDepositOpen(true) : setIsAuthOpen(true);
   
   const handleEnterGame = (game: Game) => {
@@ -230,7 +227,6 @@ export default function Home() {
     setActiveGame(game);
     setView('GAME');
     
-    // CORREÇÃO: Inicia imediatamente
     setTimeout(() => { playRound(game); }, 50);
   };
 
@@ -263,7 +259,6 @@ export default function Home() {
     let cumulativeChance = 0;
     const currentPrizes = game.prizes || [];
     
-    // Sorteia se ganhou ou não
     for (const prize of currentPrizes) {
         cumulativeChance += (Number(prize.chance) || 0);
         if (random <= cumulativeChance) { winningPrize = prize; break; }
@@ -272,16 +267,11 @@ export default function Home() {
     let finalGrid: Prize[] = [];
 
     if (winningPrize) {
-        // CENÁRIO: GANHOU (Coloca 3 prêmios iguais)
         finalGrid.push(winningPrize, winningPrize, winningPrize);
-        
-        // Preenche o resto com outros prêmios (sem repetir 3 vezes para não confundir)
         const otherOptions = currentPrizes.filter((p: Prize) => p.name !== winningPrize?.name);
         for (let i = 0; i < 6; i++) {
             if (otherOptions.length > 0) {
-                // Pega um prêmio aleatório para encher buraco
                 const randomFiller = otherOptions[Math.floor(Math.random() * otherOptions.length)];
-                // Garante que não vai criar outro trio acidentalmente
                 if (finalGrid.filter(p => p.name === randomFiller.name).length < 2) {
                     finalGrid.push(randomFiller);
                 } else {
@@ -290,28 +280,18 @@ export default function Home() {
             }
         }
     } else {
-        // CENÁRIO: PERDEU
-        // Agora preenchemos com IMAGENS REAIS, mas cuidando pra não dar 3 iguais
         let attempts = 0;
         while (finalGrid.length < 9 && attempts < 100) {
             const randomPrize = currentPrizes[Math.floor(Math.random() * currentPrizes.length)];
-            
-            // Conta quantos desse prêmio já tem na grade
             const count = finalGrid.filter(p => p.name === randomPrize.name).length;
-            
-            // Só adiciona se tiver menos de 2 (para não formar trio e parecer que ganhou)
             if (count < 2) {
                 finalGrid.push(randomPrize);
             }
             attempts++;
         }
-        // Segurança: Se faltar espaço, completa com qualquer um (raro acontecer)
-        while (finalGrid.length < 9) {
-            finalGrid.push(currentPrizes[0]);
-        }
+        while (finalGrid.length < 9) { finalGrid.push(currentPrizes[0]); }
     }
 
-    // Embaralha tudo para o prêmio não ficar sempre no começo
     setPrizesGrid(finalGrid.sort(() => Math.random() - 0.5));
     setLoading(false);
     setGameId(prev => prev + 1);
@@ -351,13 +331,10 @@ export default function Home() {
   };
 
  const triggerWin = () => {
-    // 1. Toca o som de vitória
     if (winAudioRef.current) { 
         winAudioRef.current.currentTime = 0; 
         winAudioRef.current.play().catch(() => {}); 
     }
-    
-    // 2. A Explosão Dourada
     confetti({
       particleCount: 150,
       spread: 100,
@@ -372,21 +349,19 @@ export default function Home() {
   const handleBackToLobby = () => { setShowPopup(false); setIsGameFinished(false); setActiveGame(null); setView('LOBBY'); };
   const handleOpenGame = (game: Game) => { handleEnterGame(game); };
 
-  // --- INSTALAÇÃO DO PWA ---
   const handleInstallApp = async () => {
     if (deferredPrompt) {
       deferredPrompt.prompt();
       const { outcome } = await deferredPrompt.userChoice;
-      if (outcome === 'accepted') {
-        setDeferredPrompt(null);
-      }
+      if (outcome === 'accepted') { setDeferredPrompt(null); }
     }
   };
 
   return (
     <>
-      <div className="min-h-screen bg-zinc-950 text-white font-sans pb-24 md:max-w-md md:mx-auto md:border-x md:border-zinc-800 md:shadow-2xl" style={{ selectionBackgroundColor: layoutConfig.color } as any}>
-        <header className="fixed top-0 w-full z-40 bg-zinc-950/80 backdrop-blur-md border-b border-white/5 px-4 h-16 flex items-center justify-between md:max-w-md md:mx-auto">
+      {/* CORREÇÃO: Removi classes que poderiam esconder conteúdo no Desktop */}
+      <div className="min-h-screen bg-zinc-950 text-white font-sans pb-24 w-full" style={{ selectionBackgroundColor: layoutConfig.color } as any}>
+        <header className="fixed top-0 w-full z-40 bg-zinc-950/80 backdrop-blur-md border-b border-white/5 px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
             {view !== 'LOBBY' ? (
               <button onClick={handleBackToLobby} className="p-2 -ml-2 text-zinc-400 hover:text-white"><ChevronLeft size={28} /></button>
@@ -469,7 +444,42 @@ export default function Home() {
           </main>
         )}
 
-        <div className="fixed bottom-0 w-full bg-zinc-950/95 backdrop-blur-md border-t border-zinc-800 pb-2 pt-2 px-0 z-50 h-[80px] grid grid-cols-5 items-center md:max-w-md md:mx-auto">
+        {view === 'LOBBY' && (
+          <main className="px-4 pb-8">
+            <div className="w-full rounded-2xl relative overflow-hidden shadow-lg border border-zinc-800 mb-8 group bg-zinc-900">
+              {layoutConfig.banner ? <img src={layoutConfig.banner} className="w-full h-auto object-contain block" /> : <div className="h-52 bg-zinc-800 flex items-center justify-center font-bold text-zinc-600">Sem Banner</div>}
+            </div>
+            <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2"><Grid size={18} style={{ color: layoutConfig.color }} /> Destaques</h3>
+            <div className="flex flex-col gap-5">
+              {gamesList.length > 0 ? (
+                  gamesList.map((game) => {
+                      const maxPrize = Math.max(...(game.prizes?.map(p => Number(p.value) || 0) || [0]));
+                      return (
+                      <div key={game.id} className="bg-zinc-900 rounded-xl overflow-hidden border border-zinc-800 shadow-lg">
+                          <div className="w-full h-44 bg-zinc-950 relative flex items-center justify-center overflow-hidden">
+                               {game.cover ? <img src={game.cover} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-zinc-600 text-xs">Sem Imagem</div>}
+                          </div>
+                          <div className="p-4 flex flex-col gap-1 items-start text-left">
+                              <h3 className="text-white font-bold text-lg leading-tight">{game.name}</h3>
+                              <span className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: layoutConfig.color }}>PRÊMIOS DE ATÉ {formatCurrency(maxPrize)}</span>
+                              <div className="w-full flex items-center justify-between mt-auto">
+                                  <button onClick={() => handleOpenGame(game)} className="flex items-center gap-2 px-4 py-2 rounded-lg transition-transform active:scale-95 hover:brightness-110" style={{ backgroundColor: layoutConfig.color }}>
+                                      <div className="w-4 h-4 rounded-full bg-black/20 flex items-center justify-center"><Zap size={10} className="text-black fill-current" /></div>
+                                      <span className="text-black font-black text-sm uppercase">JOGAR</span>
+                                      <div className="bg-black/20 px-1.5 py-0.5 rounded text-[10px] font-bold text-black">{formatCurrency(game.price)}</div>
+                                  </button>
+                                  <button onClick={(e) => { e.stopPropagation(); setPreviewGame(game); }} className="flex items-center gap-1 text-[10px] font-bold text-zinc-400 hover:text-white"><Gift size={12} /> VER PRÊMIOS <ChevronRight size={10} /></button>
+                              </div>
+                          </div>
+                      </div>
+                      );
+                  })
+              ) : <div className="text-center py-10 text-white font-bold text-lg animate-pulse">Carregando jogos...</div>}
+            </div>
+          </main>
+        )}
+
+        <div className="fixed bottom-0 w-full bg-zinc-950/95 backdrop-blur-md border-t border-zinc-800 pb-2 pt-2 px-0 z-50 h-[80px] grid grid-cols-5 items-center">
           <button onClick={handleBackToLobby} className={`flex flex-col items-center justify-center gap-1 h-full ${view === 'LOBBY' ? '' : 'text-zinc-500'}`} style={view === 'LOBBY' ? { color: layoutConfig.color } : {}}><HomeIcon size={24} strokeWidth={view === 'LOBBY' ? 3 : 2} /> <span className="text-[10px] font-medium">Início</span></button>
           <button onClick={() => user ? setShowMysteryBox(true) : setIsAuthOpen(true)} className={`flex flex-col items-center justify-center gap-1 h-full ${showMysteryBox ? 'text-white' : 'text-zinc-500'}`}><Gift size={24} /> <span className="text-[10px] font-medium">Surpresa</span></button>
           <div className="relative h-full flex items-center justify-center"><button onClick={handleOpenDeposit} className="absolute -top-8 text-black p-4 rounded-full transition-transform active:scale-95 border-4 border-zinc-950 shadow-xl" style={{ backgroundColor: layoutConfig.color, boxShadow: `0 0 20px ${layoutConfig.color}66` }}><PlusCircle size={32} strokeWidth={2.5} /></button></div>
@@ -517,7 +527,6 @@ export default function Home() {
          </div>
       )}
 
-      {/* ALTERAÇÃO 3: Popup corrigido para Overlay */}
       {showPopup && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-sm flex items-center justify-center z-[70] p-6 animate-in fade-in">
           <div className="w-full max-w-sm bg-zinc-900 rounded-3xl p-6 border border-zinc-800 text-center relative shadow-2xl">
