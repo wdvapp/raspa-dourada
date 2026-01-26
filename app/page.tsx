@@ -8,46 +8,17 @@ import { AuthModal } from '../components/AuthModal';
 import ProfileSidebar from '../components/ProfileSidebar';
 import confetti from 'canvas-confetti';
 import { db, app } from '../lib/firebase';
-import { doc, getDoc, collection, getDocs, onSnapshot, updateDoc, increment, serverTimestamp, query, orderBy, addDoc } from 'firebase/firestore'; 
+import { doc, getDoc, collection, getDocs, onSnapshot, updateDoc, increment, serverTimestamp, query, orderBy, addDoc, writeBatch } from 'firebase/firestore'; 
 import { getAuth, onAuthStateChanged, signOut } from 'firebase/auth';
 import {
-  User, Trophy, ChevronLeft, Home as HomeIcon, Grid, PlusCircle, Bell, Zap, Star, XCircle, RotateCw, Gift, ChevronRight, X, Clock, Download
+  User, Trophy, ChevronLeft, Home as HomeIcon, Grid, PlusCircle, Bell, Zap, Star, XCircle, RotateCw, Gift, ChevronRight, X, Clock, Download, CheckCircle
 } from 'lucide-react';
 
 // --- INTERFACES ---
-interface Prize {
-  name: string;
-  value: number;
-  chance: number;
-  image?: string; 
-}
-
-interface Game {
-  id: string;
-  name: string;
-  price: number;
-  cover: string;
-  description?: string;
-  prizes: Prize[];
-}
-
-interface Winner {
-  id: string;
-  image?: string;
-  url?: string;
-  photo?: string;
-  name?: string;
-  city?: string;
-  amount?: number;
-}
-
-interface NotificationMsg {
-    id: string;
-    title: string;
-    body: string;
-    read: boolean;
-    createdAt: any;
-}
+interface Prize { name: string; value: number; chance: number; image?: string; }
+interface Game { id: string; name: string; price: number; cover: string; description?: string; prizes: Prize[]; }
+interface Winner { id: string; image?: string; url?: string; photo?: string; name?: string; city?: string; amount?: number; }
+interface NotificationMsg { id: string; title: string; body: string; read: boolean; createdAt: any; }
 
 export default function Home() {
   // --- ESTADOS GERAIS ---
@@ -61,11 +32,14 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [gameId, setGameId] = useState(0);
    
-  // --- CONFIGURAÇÃO ---
+  // --- CONFIGURAÇÃO & NOTIFICAÇÕES ---
   const [dailyGiftConfig, setDailyGiftConfig] = useState({ active: false, amount: 0 });
   const [notifications, setNotifications] = useState<NotificationMsg[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const unreadCount = notifications.filter(n => !n.read).length;
+  
+  // TOAST (NOTIFICAÇÃO FLUTUANTE)
+  const [toast, setToast] = useState<{ visible: boolean; title: string; msg: string }>({ visible: false, title: '', msg: '' });
 
   // --- POPUPS ---
   const [previewGame, setPreviewGame] = useState<Game | null>(null);
@@ -81,9 +55,7 @@ export default function Home() {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
 
   // CONFIGURAÇÃO VISUAL
-  const [layoutConfig, setLayoutConfig] = useState<any>({
-    logo: '', banner: '', gameThumb: '', scratchCover: '/gold.png', color: '#ffc700' 
-  });
+  const [layoutConfig, setLayoutConfig] = useState<any>({ logo: '', banner: '', gameThumb: '', scratchCover: '/gold.png', color: '#ffc700' });
 
   const [isGameFinished, setIsGameFinished] = useState(false);
   const [showPopup, setShowPopup] = useState(false);
@@ -150,6 +122,18 @@ export default function Home() {
         const notifQuery = query(collection(db, 'users', currentUser.uid, 'notifications'), orderBy('createdAt', 'desc'));
         unsubscribeNotifs = onSnapshot(notifQuery, (snapshot) => {
             const msgs = snapshot.docs.map(d => ({ id: d.id, ...d.data() })) as NotificationMsg[];
+            
+            // Lógica do TOAST: Se a mensagem mais recente não foi lida, mostra o pop-up
+            if (msgs.length > 0 && !msgs[0].read) {
+                // Verifica se é "nova" (criada nos últimos 10 segundos) para não floodar ao recarregar a página
+                const now = new Date();
+                const msgDate = msgs[0].createdAt ? msgs[0].createdAt.toDate() : new Date();
+                const diffSeconds = (now.getTime() - msgDate.getTime()) / 1000;
+                
+                if (diffSeconds < 10) { 
+                    triggerToast(msgs[0].title, msgs[0].body);
+                }
+            }
             setNotifications(msgs);
         });
       } else {
@@ -166,6 +150,13 @@ export default function Home() {
         if (unsubscribeNotifs) unsubscribeNotifs();
     };
   }, []);
+
+  // --- CONTROLE DO TOAST ---
+  const triggerToast = (title: string, msg: string) => {
+      setToast({ visible: true, title, msg });
+      // Fecha sozinho após 4 segundos
+      setTimeout(() => setToast(prev => ({ ...prev, visible: false })), 4000);
+  };
 
   // --- CONTROLE DE MÚSICA ---
   useEffect(() => {
@@ -200,13 +191,34 @@ export default function Home() {
           await addDoc(collection(db, 'users', user.uid, 'notifications'), {
             title: 'Bônus Resgatado! 🎁',
             body: `Você ganhou ${formatCurrency(dailyGiftConfig.amount)} de bônus diário!`,
-            read: false,
+            read: false, // Começa não lida
             createdAt: serverTimestamp()
           });
 
           triggerWin(); 
           setShowMysteryBox(false);
       } catch (error) { console.error(error); } finally { setClaimingBonus(false); }
+  };
+
+  // --- MARCAR NOTIFICAÇÕES COMO LIDA (REMOVE A BOLINHA) ---
+  const handleOpenNotifications = async () => {
+      setShowNotifications(!showNotifications);
+      
+      if (!showNotifications && unreadCount > 0 && user) {
+          // Se estiver abrindo e tiver não lidas, marca todas como lidas no banco
+          try {
+              const batch = writeBatch(db);
+              notifications.forEach(n => {
+                  if (!n.read) {
+                      const ref = doc(db, 'users', user.uid, 'notifications', n.id);
+                      batch.update(ref, { read: true });
+                  }
+              });
+              await batch.commit();
+          } catch (e) {
+              console.error("Erro ao marcar lidas", e);
+          }
+      }
   };
 
   // --- NAVEGAÇÃO & JOGO ---
@@ -352,6 +364,18 @@ export default function Home() {
 
   return (
     <>
+      {/* --- TOAST AUTOMÁTICO (NOVA FEATURE) --- */}
+      <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-[100] w-[90%] max-w-sm bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl p-4 flex items-center gap-4 transition-all duration-500 ${toast.visible ? 'translate-y-0 opacity-100' : '-translate-y-20 opacity-0 pointer-events-none'}`}>
+          <div className="w-10 h-10 bg-yellow-500 rounded-full flex items-center justify-center shrink-0 animate-pulse">
+              <Bell className="text-black" size={20} />
+          </div>
+          <div className="flex-1">
+              <h4 className="text-white font-bold text-sm">{toast.title}</h4>
+              <p className="text-zinc-400 text-xs leading-tight mt-0.5">{toast.msg}</p>
+          </div>
+          <button onClick={() => setToast(prev => ({...prev, visible: false}))} className="text-zinc-500 hover:text-white"><X size={18}/></button>
+      </div>
+
       <div className="min-h-screen bg-zinc-950 text-white font-sans pb-24 w-full" style={{ selectionBackgroundColor: layoutConfig.color } as any}>
         <header className="fixed top-0 w-full z-40 bg-zinc-950/80 backdrop-blur-md border-b border-white/5 px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -369,11 +393,30 @@ export default function Home() {
           </div>
           <div className="flex items-center gap-3">
             <div className="relative">
-                <button onClick={() => setShowNotifications(!showNotifications)} className="bg-zinc-800 p-2 rounded-full text-zinc-400 hover:text-white relative"><Bell size={20} />{unreadCount > 0 && <span className="absolute top-0 right-0 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-zinc-800"></span>}</button>
+                {/* BOTÃO DO SININHO ATUALIZADO */}
+                <button onClick={handleOpenNotifications} className="bg-zinc-800 p-2 rounded-full text-zinc-400 hover:text-white relative">
+                    <Bell size={20} />
+                    {unreadCount > 0 && <span className="absolute top-0 right-0 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-zinc-800 animate-pulse"></span>}
+                </button>
+                
                 {showNotifications && (
                     <div className="absolute right-0 top-12 w-72 bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl overflow-hidden z-50 animate-in fade-in">
-                        <div className="p-3 border-b border-zinc-800 bg-zinc-950 font-bold text-sm flex justify-between items-center"><span>Notificações</span><button onClick={() => setShowNotifications(false)}><X size={14}/></button></div>
-                        <div className="max-h-64 overflow-y-auto">{notifications.length > 0 ? (notifications.map(n => (<div key={n.id} className="p-3 border-b border-zinc-800/50 hover:bg-zinc-800/50"><p className="text-xs font-bold text-white mb-1">{n.title}</p><p className="text-[10px] text-zinc-400 leading-relaxed">{n.body}</p></div>))) : <div className="p-6 text-center text-xs text-zinc-500">Você não tem notificações.</div>}</div>
+                        <div className="p-3 border-b border-zinc-800 bg-zinc-950 font-bold text-sm flex justify-between items-center">
+                            <span>Notificações</span>
+                            <button onClick={() => setShowNotifications(false)}><X size={14}/></button>
+                        </div>
+                        <div className="max-h-64 overflow-y-auto">
+                            {notifications.length > 0 ? (notifications.map(n => (
+                                <div key={n.id} className={`p-3 border-b border-zinc-800/50 hover:bg-zinc-800/50 ${!n.read ? 'bg-zinc-800/30' : ''}`}>
+                                    <div className="flex justify-between items-start mb-1">
+                                        <p className={`text-xs font-bold ${!n.read ? 'text-white' : 'text-zinc-400'}`}>{n.title}</p>
+                                        {!n.read && <span className="w-1.5 h-1.5 rounded-full bg-yellow-500"></span>}
+                                    </div>
+                                    <p className="text-[10px] text-zinc-400 leading-relaxed">{n.body}</p>
+                                    <p className="text-[9px] text-zinc-600 mt-2 text-right">{n.createdAt?.toDate().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
+                                </div>
+                            ))) : <div className="p-6 text-center text-xs text-zinc-500">Você não tem notificações.</div>}
+                        </div>
                     </div>
                 )}
             </div>
@@ -437,13 +480,11 @@ export default function Home() {
         )}
 
         {view === 'LOBBY' && (
-          // MUDANÇA AQUI: Adicionei md:max-w-7xl para não esticar demais e centralizar
           <main className="px-4 pb-8 md:max-w-7xl md:mx-auto">
             <div className="w-full rounded-2xl relative overflow-hidden shadow-lg border border-zinc-800 mb-8 group bg-zinc-900">
               {layoutConfig.banner ? <img src={layoutConfig.banner} className="w-full h-auto object-contain block" /> : <div className="h-52 bg-zinc-800 flex items-center justify-center font-bold text-zinc-600">Sem Banner</div>}
             </div>
             <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2"><Grid size={18} style={{ color: layoutConfig.color }} /> Destaques</h3>
-            {/* MUDANÇA AQUI: Era flex-col, agora é GRID (1 no mobile, 3 no PC) */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {gamesList.length > 0 ? (
                   gamesList.map((game) => {
@@ -478,7 +519,6 @@ export default function Home() {
           <button onClick={() => user ? setShowMysteryBox(true) : setIsAuthOpen(true)} className={`flex flex-col items-center justify-center gap-1 h-full ${showMysteryBox ? 'text-white' : 'text-zinc-500'}`}><Gift size={24} /> <span className="text-[10px] font-medium">Surpresa</span></button>
           <div className="relative h-full flex items-center justify-center"><button onClick={handleOpenDeposit} className="absolute -top-8 text-black p-4 rounded-full transition-transform active:scale-95 border-4 border-zinc-950 shadow-xl" style={{ backgroundColor: layoutConfig.color, boxShadow: `0 0 20px ${layoutConfig.color}66` }}><PlusCircle size={32} strokeWidth={2.5} /></button></div>
           
-          {/* BOTÃO INTELIGENTE: Instalar ou Ganhadores */}
           {deferredPrompt ? (
              <button onClick={handleInstallApp} className="flex flex-col items-center justify-center gap-1 h-full text-zinc-500 animate-pulse hover:text-green-500">
                 <Download size={24} /> 
