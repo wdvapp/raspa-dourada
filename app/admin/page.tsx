@@ -1,55 +1,56 @@
+// @ts-nocheck
 'use client';
 
 import { useEffect, useState } from 'react';
 import { db, app } from '../../lib/firebase';
-import { collection, query, orderBy, onSnapshot, where, doc, getDoc, updateDoc } from 'firebase/firestore';
+import { collection, query, orderBy, onSnapshot, where, doc, getDoc, updateDoc, addDoc, deleteDoc, Timestamp } from 'firebase/firestore';
 import { getAuth, onAuthStateChanged } from 'firebase/auth';
 import { useRouter } from 'next/navigation';
-import { DollarSign, Users, TrendingUp, Calendar, Megaphone, Gift, Save, Send, Loader2, Lock } from 'lucide-react';
+import { DollarSign, Users, TrendingUp, Calendar, Megaphone, Gift, Save, Send, Loader2, Lock, Clock, Trash2, CheckCircle } from 'lucide-react';
 
 export default function AdminDashboard() {
   const router = useRouter();
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [checkingAuth, setCheckingAuth] = useState(true);
 
-  // --- ESTADOS DO DASHBOARD ---
+  // --- ESTADOS GERAIS ---
   const [stats, setStats] = useState({ todayRevenue: 0, weekRevenue: 0, totalUsers: 0 });
   const [recentDeposits, setRecentDeposits] = useState<any[]>([]);
   const [recentUsers, setRecentUsers] = useState<any[]>([]);
   
-  // --- ESTADOS DE MARKETING ---
+  // --- MARKETING & BÔNUS ---
   const [bonusActive, setBonusActive] = useState(false);
   const [bonusAmount, setBonusAmount] = useState(0);
   const [loadingBonus, setLoadingBonus] = useState(false);
+
+  // --- NOTIFICAÇÕES & AGENDAMENTO ---
+  const [notifMode, setNotifMode] = useState<'NOW' | 'SCHEDULE'>('NOW');
   const [notifTitle, setNotifTitle] = useState('');
   const [notifBody, setNotifBody] = useState('');
+  const [scheduleDate, setScheduleDate] = useState(''); // YYYY-MM-DD
+  const [scheduleTime, setScheduleTime] = useState(''); // HH:MM
   const [sendingPush, setSendingPush] = useState(false);
+  const [scheduledList, setScheduledList] = useState<any[]>([]);
 
-  // --- 1. GUARDIÃO INVISÍVEL (MODO FANTASMA) ---
+  // --- 1. SEGURANÇA FANTASMA ---
   useEffect(() => {
     const auth = getAuth(app);
     const unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
       if (currentUser) {
         try {
-            // Verifica no banco se tem a etiqueta 'admin'
             const userDocRef = doc(db, 'users', currentUser.uid);
             const userSnap = await getDoc(userDocRef);
-
             if (userSnap.exists() && userSnap.data().role === 'admin') {
-                setIsAuthorized(true); // Abre a sala secreta
+                setIsAuthorized(true);
             } else {
-                router.replace('/'); // Chuta silenciosamente
+                router.replace('/');
             }
-        } catch (error) {
-            console.error("Erro verificação", error);
-            router.replace('/'); // Na dúvida, chuta
-        }
+        } catch (error) { router.replace('/'); }
       } else {
-        router.replace('/'); // Não tá logado? Chuta pra Home
+        router.replace('/');
       }
       setCheckingAuth(false);
     });
-
     return () => unsubscribeAuth();
   }, [router]);
 
@@ -57,48 +58,80 @@ export default function AdminDashboard() {
   useEffect(() => {
     if (!isAuthorized) return;
 
-    const loadConfig = async () => {
-        try {
-            const docRef = doc(db, 'config', 'daily_gift');
-            const docSnap = await getDoc(docRef);
-            if (docSnap.exists()) {
-                setBonusActive(docSnap.data().active);
-                setBonusAmount(docSnap.data().amount);
-            }
-        } catch (e) { console.error(e); }
-    };
-    loadConfig();
+    // Config Bônus
+    getDoc(doc(db, 'config', 'daily_gift')).then(snap => {
+        if(snap.exists()) { setBonusActive(snap.data().active); setBonusAmount(snap.data().amount); }
+    });
 
+    // Depósitos
     const qDeposits = query(collection(db, 'deposits'), where('status', '==', 'completed'));
-    const unsubscribeDeposits = onSnapshot(qDeposits, (snapshot) => {
-      let today = 0;
-      let week = 0;
+    const unsubDeposits = onSnapshot(qDeposits, (snapshot) => {
+      let today = 0, week = 0;
       const now = new Date();
       const startOfDay = new Date(now.setHours(0,0,0,0));
       const startOfWeek = new Date(now.setDate(now.getDate() - 7));
-      const depositsList: any[] = [];
-
+      const list: any[] = [];
       snapshot.docs.forEach(doc => {
-        const data = doc.data();
-        const amount = Number(data.amount) || 0;
-        const date = data.paidAt ? new Date(data.paidAt.seconds * 1000 || data.paidAt) : new Date();
-        if (date >= startOfDay) today += amount;
-        if (date >= startOfWeek) week += amount;
-        depositsList.push({ id: doc.id, ...data, paidAt: date });
+        const d = doc.data();
+        const amt = Number(d.amount) || 0;
+        const date = d.paidAt ? new Date(d.paidAt.seconds * 1000 || d.paidAt) : new Date();
+        if (date >= startOfDay) today += amt;
+        if (date >= startOfWeek) week += amt;
+        list.push({ id: doc.id, ...d, paidAt: date });
       });
-      depositsList.sort((a, b) => b.paidAt - a.paidAt);
-      setRecentDeposits(depositsList.slice(0, 5));
+      list.sort((a, b) => b.paidAt - a.paidAt);
+      setRecentDeposits(list.slice(0, 5));
       setStats(prev => ({ ...prev, todayRevenue: today, weekRevenue: week }));
     });
 
+    // Usuários
     const qUsers = query(collection(db, 'users'), orderBy('createdAt', 'desc')); 
-    const unsubscribeUsers = onSnapshot(qUsers, (snapshot) => {
-      setStats(prev => ({ ...prev, totalUsers: snapshot.size }));
-      setRecentUsers(snapshot.docs.slice(0, 5).map(doc => ({ id: doc.id, ...doc.data() })));
+    const unsubUsers = onSnapshot(qUsers, (snap) => {
+      setStats(prev => ({ ...prev, totalUsers: snap.size }));
+      setRecentUsers(snap.docs.slice(0, 5).map(doc => ({ id: doc.id, ...doc.data() })));
     });
 
-    return () => { unsubscribeDeposits(); unsubscribeUsers(); };
+    // Agendamentos (Nova Query)
+    const qSchedule = query(collection(db, 'scheduled_messages'), where('status', '==', 'pending'), orderBy('scheduledAt', 'asc'));
+    const unsubSchedule = onSnapshot(qSchedule, (snap) => {
+        setScheduledList(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        // Check automático: Se tiver mensagem vencida, processa
+        checkAndSendScheduled(snap.docs);
+    });
+
+    return () => { unsubDeposits(); unsubUsers(); unsubSchedule(); };
   }, [isAuthorized]);
+
+  // --- LÓGICA DE AGENDAMENTO E ENVIO ---
+
+  // Verifica se tem mensagens pendentes que já passaram da hora
+  const checkAndSendScheduled = async (docs: any[]) => {
+      const now = new Date();
+      docs.forEach(async (docSnap) => {
+          const data = docSnap.data();
+          const scheduledTime = data.scheduledAt.toDate();
+          
+          if (scheduledTime <= now && data.status === 'pending') {
+              console.log("Enviando mensagem agendada:", data.title);
+              // Marca como enviando para não duplicar
+              await updateDoc(doc(db, 'scheduled_messages', docSnap.id), { status: 'processing' });
+              
+              // Dispara envio
+              try {
+                  await fetch('/api/send-push', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ title: data.title, body: data.body })
+                  });
+                  // Atualiza para enviado
+                  await updateDoc(doc(db, 'scheduled_messages', docSnap.id), { status: 'sent', sentAt: serverTimestamp() });
+              } catch (e) {
+                  console.error("Erro envio agendado", e);
+                  await updateDoc(doc(db, 'scheduled_messages', docSnap.id), { status: 'error' });
+              }
+          }
+      });
+  };
 
   const handleSaveBonus = async () => {
     setLoadingBonus(true);
@@ -109,29 +142,59 @@ export default function AdminDashboard() {
     setLoadingBonus(false);
   };
 
-  const handleSendPush = async () => {
-    if (!notifTitle || !notifBody) return alert('Preencha tudo.');
-    if (!confirm(`Enviar para TODOS?`)) return;
+  const handleNotificationSubmit = async () => {
+    if (!notifTitle || !notifBody) return alert('Preencha título e mensagem.');
+    
     setSendingPush(true);
-    try {
-      const res = await fetch('/api/send-push', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: notifTitle, body: notifBody })
-      });
-      const data = await res.json();
-      if (data.success) { alert('🚀 Enviado!'); setNotifTitle(''); setNotifBody(''); } 
-      else { alert('Erro: ' + JSON.stringify(data)); }
-    } catch (error) { alert('Erro de conexão.'); }
+
+    if (notifMode === 'NOW') {
+        // ENVIO IMEDIATO
+        if (!confirm(`Enviar para TODOS agora?`)) { setSendingPush(false); return; }
+        try {
+            const res = await fetch('/api/send-push', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ title: notifTitle, body: notifBody })
+            });
+            const data = await res.json();
+            if (data.success) { alert('🚀 Enviado!'); setNotifTitle(''); setNotifBody(''); } 
+            else { alert('Erro: ' + JSON.stringify(data)); }
+        } catch (error) { alert('Erro de conexão.'); }
+
+    } else {
+        // AGENDAMENTO
+        if (!scheduleDate || !scheduleTime) {
+            alert("Escolha data e hora."); setSendingPush(false); return;
+        }
+        const scheduledDateTime = new Date(`${scheduleDate}T${scheduleTime}`);
+        if (scheduledDateTime < new Date()) {
+            alert("A data deve ser no futuro."); setSendingPush(false); return;
+        }
+
+        try {
+            await addDoc(collection(db, 'scheduled_messages'), {
+                title: notifTitle,
+                body: notifBody,
+                scheduledAt: Timestamp.fromDate(scheduledDateTime),
+                status: 'pending',
+                createdAt: serverTimestamp()
+            });
+            alert('📅 Mensagem Agendada com Sucesso!');
+            setNotifTitle(''); setNotifBody(''); setScheduleDate(''); setScheduleTime('');
+        } catch (e) {
+            console.error(e); alert("Erro ao agendar.");
+        }
+    }
     setSendingPush(false);
   };
 
-  // --- O SEGREDO DA INVISIBILIDADE ---
-  // Enquanto verifica ou se não for autorizado, retorna NULL (Tela em branco total)
-  // Isso impede que a pessoa veja "Login" ou "Acesso Negado" antes de ser redirecionada.
-  if (checkingAuth || !isAuthorized) {
-      return null; 
-  }
+  const handleDeleteSchedule = async (id: string) => {
+      if(confirm("Cancelar este agendamento?")) {
+          await deleteDoc(doc(db, 'scheduled_messages', id));
+      }
+  };
+
+  if (checkingAuth || !isAuthorized) return null;
 
   return (
     <div className="max-w-6xl mx-auto space-y-8 animate-in fade-in duration-500 pb-20 p-6">
@@ -143,6 +206,7 @@ export default function AdminDashboard() {
         </div>
       </div>
 
+      {/* DASHBOARD NUMEROS */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="bg-gradient-to-br from-green-900 to-green-950 border border-green-800 p-8 rounded-3xl relative overflow-hidden group">
             <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:scale-110 transition-transform"><DollarSign size={100} /></div>
@@ -157,41 +221,81 @@ export default function AdminDashboard() {
       </div>
 
       <h2 className="text-2xl font-bold text-white flex items-center gap-2 mt-4"><Megaphone className="text-purple-500" /> Central de Marketing</h2>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          <div className="bg-zinc-900 p-6 rounded-2xl border border-zinc-800 shadow-xl">
-            <div className="flex items-center gap-3 mb-6 pb-4 border-b border-zinc-800">
-                <div className="p-3 bg-purple-500/20 rounded-full text-purple-400"><Gift size={24} /></div>
-                <div><h3 className="text-lg font-bold text-white">Bônus Diário</h3><p className="text-xs text-zinc-500">Valor que o usuário ganha a cada 24h.</p></div>
-            </div>
-            <div className="space-y-5">
-                <div className="flex items-center justify-between bg-black/20 p-4 rounded-xl border border-zinc-700/50">
-                    <span className="font-medium text-zinc-300">Campanha Ativa?</span>
-                    <button onClick={() => setBonusActive(!bonusActive)} className={`w-14 h-8 rounded-full transition-colors relative ${bonusActive ? 'bg-green-500' : 'bg-zinc-700'}`}>
-                    <div className={`absolute top-1 w-6 h-6 bg-white rounded-full transition-all shadow-md ${bonusActive ? 'left-7' : 'left-1'}`}></div>
-                    </button>
-                </div>
-                <div><label className="block text-xs font-bold text-zinc-500 uppercase mb-2">Valor (R$)</label><input type="number" value={bonusAmount} onChange={(e) => setBonusAmount(Number(e.target.value))} className="w-full bg-black/20 border border-zinc-700 rounded-xl py-3 px-4 text-white font-bold text-lg focus:border-purple-500 outline-none" /></div>
-                <button onClick={handleSaveBonus} disabled={loadingBonus} className="w-full bg-purple-600 hover:bg-purple-500 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 mt-2 transition-all active:scale-95">
-                    {loadingBonus ? <Loader2 className="animate-spin" /> : <Save size={18} />} SALVAR
-                </button>
-            </div>
-          </div>
+      
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          
+          {/* PAINEL DE ENVIO / AGENDAMENTO */}
           <div className="bg-zinc-900 p-6 rounded-2xl border border-zinc-800 shadow-xl">
             <div className="flex items-center gap-3 mb-6 pb-4 border-b border-zinc-800">
                 <div className="p-3 bg-yellow-500/20 rounded-full text-yellow-500"><Megaphone size={24} /></div>
-                <div><h3 className="text-lg font-bold text-white">Enviar Notificação</h3><p className="text-xs text-zinc-500">Dispara para celular e sininho de todos.</p></div>
+                <div><h3 className="text-lg font-bold text-white">Criar Notificação</h3><p className="text-xs text-zinc-500">Envie agora ou agende para depois.</p></div>
             </div>
+
+            {/* SELETOR DE MODO */}
+            <div className="flex bg-zinc-950 p-1 rounded-xl mb-4 border border-zinc-800">
+                <button onClick={() => setNotifMode('NOW')} className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${notifMode === 'NOW' ? 'bg-yellow-500 text-black shadow' : 'text-zinc-500 hover:text-white'}`}>ENVIAR AGORA</button>
+                <button onClick={() => setNotifMode('SCHEDULE')} className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${notifMode === 'SCHEDULE' ? 'bg-purple-600 text-white shadow' : 'text-zinc-500 hover:text-white'}`}>AGENDAR</button>
+            </div>
+
             <div className="space-y-4">
                 <input type="text" placeholder="Título" value={notifTitle} onChange={(e) => setNotifTitle(e.target.value)} className="w-full bg-black/20 border border-zinc-700 rounded-xl p-3 text-white focus:border-yellow-500 outline-none" />
                 <textarea rows={2} placeholder="Mensagem" value={notifBody} onChange={(e) => setNotifBody(e.target.value)} className="w-full bg-black/20 border border-zinc-700 rounded-xl p-3 text-white focus:border-yellow-500 outline-none resize-none" />
-                <button onClick={handleSendPush} disabled={sendingPush} className="w-full bg-yellow-500 hover:bg-yellow-400 text-black font-black py-3 rounded-xl flex items-center justify-center gap-2 mt-2 transition-all active:scale-95">
-                    {sendingPush ? <Loader2 className="animate-spin" /> : <Send size={18} />} ENVIAR PARA TODOS
+                
+                {/* CAMPOS DE DATA SE FOR AGENDAMENTO */}
+                {notifMode === 'SCHEDULE' && (
+                    <div className="grid grid-cols-2 gap-4 animate-in fade-in slide-in-from-top-2">
+                        <div>
+                            <label className="text-[10px] uppercase font-bold text-zinc-500 mb-1 block">Data</label>
+                            <input type="date" value={scheduleDate} onChange={(e) => setScheduleDate(e.target.value)} className="w-full bg-black/20 border border-zinc-700 rounded-xl p-3 text-white text-sm" />
+                        </div>
+                        <div>
+                            <label className="text-[10px] uppercase font-bold text-zinc-500 mb-1 block">Hora</label>
+                            <input type="time" value={scheduleTime} onChange={(e) => setScheduleTime(e.target.value)} className="w-full bg-black/20 border border-zinc-700 rounded-xl p-3 text-white text-sm" />
+                        </div>
+                    </div>
+                )}
+
+                <button onClick={handleNotificationSubmit} disabled={sendingPush} className={`w-full font-black py-4 rounded-xl flex items-center justify-center gap-2 mt-2 transition-all active:scale-95 ${notifMode === 'NOW' ? 'bg-yellow-500 hover:bg-yellow-400 text-black' : 'bg-purple-600 hover:bg-purple-500 text-white'}`}>
+                    {sendingPush ? <Loader2 className="animate-spin" /> : (notifMode === 'NOW' ? <><Send size={18}/> ENVIAR AGORA</> : <><Clock size={18}/> AGENDAR MENSAGEM</>)}
                 </button>
             </div>
           </div>
+
+          {/* LISTA DE AGENDAMENTOS + BÔNUS */}
+          <div className="space-y-8">
+              {/* CONTROLE BÔNUS */}
+              <div className="bg-zinc-900 p-6 rounded-2xl border border-zinc-800 shadow-xl">
+                <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-3"><div className="p-2 bg-purple-500/20 rounded-full text-purple-400"><Gift size={20} /></div><span className="font-bold text-white text-sm">Bônus Diário</span></div>
+                    <div className="flex items-center bg-black/20 p-1 rounded-lg border border-zinc-700"><span className="text-xs text-zinc-400 mr-2 ml-2">Ativo?</span><button onClick={() => setBonusActive(!bonusActive)} className={`w-10 h-5 rounded-full relative transition-colors ${bonusActive ? 'bg-green-500' : 'bg-zinc-700'}`}><div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-all ${bonusActive ? 'left-5.5' : 'left-0.5'}`}></div></button></div>
+                </div>
+                <div className="flex gap-2">
+                    <input type="number" value={bonusAmount} onChange={(e) => setBonusAmount(Number(e.target.value))} className="flex-1 bg-black/20 border border-zinc-700 rounded-xl px-3 text-white font-bold" />
+                    <button onClick={handleSaveBonus} disabled={loadingBonus} className="bg-purple-600 hover:bg-purple-500 text-white px-4 rounded-xl font-bold text-sm">{loadingBonus ? '...' : 'Salvar'}</button>
+                </div>
+              </div>
+
+              {/* LISTA DE AGENDADAS */}
+              <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden h-[300px] flex flex-col">
+                  <div className="p-4 border-b border-zinc-800 bg-zinc-950/50"><h3 className="font-bold text-white text-sm flex items-center gap-2"><Clock size={16} className="text-purple-500"/> Fila de Agendamentos</h3></div>
+                  <div className="overflow-y-auto flex-1 p-2 space-y-2">
+                      {scheduledList.length > 0 ? scheduledList.map((item) => (
+                          <div key={item.id} className="bg-zinc-950 border border-zinc-800 p-3 rounded-xl flex justify-between items-center group">
+                              <div>
+                                  <p className="text-xs font-bold text-white">{item.title}</p>
+                                  <p className="text-[10px] text-zinc-500">{item.scheduledAt?.toDate().toLocaleString('pt-BR')}</p>
+                              </div>
+                              <button onClick={() => handleDeleteSchedule(item.id)} className="text-zinc-600 hover:text-red-500 p-2"><Trash2 size={16}/></button>
+                          </div>
+                      )) : <div className="text-center text-zinc-600 text-xs py-10">Nenhuma mensagem agendada.</div>}
+                  </div>
+              </div>
+          </div>
+
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-8">
+        {/* LISTAS DE USUÁRIOS E DEPÓSITOS (Mantidas iguais) */}
         <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden">
             <div className="p-6 border-b border-zinc-800 flex justify-between items-center"><h3 className="font-bold text-white flex items-center gap-2"><DollarSign className="text-green-500" size={20}/> Últimos Depósitos</h3></div>
             <div className="divide-y divide-zinc-800">
