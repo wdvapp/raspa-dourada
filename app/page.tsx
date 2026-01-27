@@ -314,7 +314,7 @@ export default function Home() {
             <div className="relative">
                 <button onClick={handleOpenNotifications} className="bg-zinc-800 p-2 rounded-full text-zinc-400 hover:text-white relative"><Bell size={20} />{unreadCount > 0 && <span className="absolute top-0 right-0 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-zinc-800 animate-pulse"></span>}</button>
                 {showNotifications && (
-                    <div className="absolute right-0 top-12 w-80 bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl overflow-hidden z-50 animate-in fade-in">
+                    <div className="fixed top-24 left-1/2 -translate-x-1/2 w-[85%] max-w-sm md:absolute md:top-12 md:right-0 md:left-auto md:translate-x-0 md:w-80 bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl overflow-hidden z-50 animate-in fade-in zoom-in-95 duration-200">
                         <div className="p-3 border-b border-zinc-800 bg-zinc-950 font-bold text-sm flex justify-between items-center">
                             <span>Notificações</span>
                             <div className="flex gap-2">
