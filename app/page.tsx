@@ -7,21 +7,21 @@ import DepositModal from '../components/DepositModal';
 import { AuthModal } from '../components/AuthModal'; 
 import ProfileSidebar from '../components/ProfileSidebar';
 import confetti from 'canvas-confetti';
-// IMPORTANTE: Adicionei 'messaging' aqui na importação
 import { db, app, messaging } from '../lib/firebase';
-// IMPORTANTE: Adicionei 'setDoc' e 'getToken' aqui
-import { doc, getDoc, collection, getDocs, onSnapshot, updateDoc, increment, serverTimestamp, query, orderBy, addDoc, writeBatch, setDoc } from 'firebase/firestore'; 
+// ADICIONEI 'deleteDoc' AQUI NAS IMPORTAÇÕES
+import { doc, getDoc, collection, getDocs, onSnapshot, updateDoc, increment, serverTimestamp, query, orderBy, addDoc, writeBatch, setDoc, deleteDoc } from 'firebase/firestore'; 
 import { getToken } from 'firebase/messaging'; 
 import { getAuth, onAuthStateChanged, signOut } from 'firebase/auth';
+// ADICIONEI 'Trash2' NOS ÍCONES
 import {
-  User, Trophy, ChevronLeft, Home as HomeIcon, Grid, PlusCircle, Bell, Zap, Star, XCircle, RotateCw, Gift, ChevronRight, X, Clock, Download, CheckCircle
+  User, Trophy, ChevronLeft, Home as HomeIcon, Grid, PlusCircle, Bell, Zap, Star, XCircle, RotateCw, Gift, ChevronRight, X, Clock, Download, CheckCircle, Trash2
 } from 'lucide-react';
 
 // --- INTERFACES ---
 interface Prize { name: string; value: number; chance: number; image?: string; }
 interface Game { id: string; name: string; price: number; cover: string; description?: string; prizes: Prize[]; }
 interface Winner { id: string; image?: string; url?: string; photo?: string; name?: string; city?: string; amount?: number; }
-interface NotificationMsg { id: string; title: string; body: string; read: boolean; createdAt: any; }
+interface NotificationMsg { id: string; title: string; body: string; read: boolean; createdAt: any; link?: string; }
 
 export default function Home() {
   const [user, setUser] = useState<any>(null);
@@ -104,39 +104,23 @@ export default function Home() {
       if (currentUser) {
         setIsAuthOpen(false); 
         
-        // --- ATIVAÇÃO DAS NOTIFICAÇÕES (PUSH) - NOVO CÓDIGO ---
+        // --- ATIVAÇÃO DAS NOTIFICAÇÕES (PUSH) ---
         if (messaging) {
             try {
-                // Pede permissão ao navegador
                 const permission = await Notification.requestPermission();
-                
                 if (permission === 'granted') {
-                    // Pega o Token (Chave do dispositivo)
                     const token = await getToken(messaging, { 
-                        // ======================================================
-                        // COLE SUA CHAVE VAPID AQUI DENTRO DAS ASPAS:
-                        vapidKey: "BPUzpe58R6mf4HTkyE2USvrJ_WLDzGIktfSMOTgvCOQ4hQXJzS2_0pAXljY8MXV112CEhmoz75-zpTbiaAJqe6s" 
-                        // ======================================================
-                    }).catch((err) => {
-                        console.log("Erro token:", err);
-                        return null;
-                    });
+                        vapidKey: "BPUzpe58R6mf4HTkyE2USvrJ_WLDzGIktfSMOTgvCOQ4HQXJzS2_0pAXlJY8MXV112CEhmoz75-zpTbiaAJqe6s" 
+                    }).catch((err) => { console.log("Erro token:", err); return null; });
 
                     if (token) {
-                        // Salva no banco para o Admin usar depois
                         await setDoc(doc(db, 'users', currentUser.uid, 'fcmTokens', token), {
-                            token: token,
-                            createdAt: serverTimestamp(),
-                            device: navigator.userAgent
+                            token: token, createdAt: serverTimestamp(), device: navigator.userAgent
                         });
-                        console.log("Token salvo:", token);
                     }
                 }
-            } catch (err) {
-                console.log("Erro notificação:", err);
-            }
+            } catch (err) { console.log("Erro notificação:", err); }
         }
-        // -------------------------------------------------------
 
         const userDocRef = doc(db, 'users', currentUser.uid);
         unsubscribeSnapshot = onSnapshot(userDocRef, (docSnap) => {
@@ -150,13 +134,10 @@ export default function Home() {
         const notifQuery = query(collection(db, 'users', currentUser.uid, 'notifications'), orderBy('createdAt', 'desc'));
         unsubscribeNotifs = onSnapshot(notifQuery, (snapshot) => {
             const msgs = snapshot.docs.map(d => ({ id: d.id, ...d.data() })) as NotificationMsg[];
-            
             if (msgs.length > 0) {
                 const newest = msgs[0];
                 if (lastMsgIdRef.current !== newest.id && !newest.read) {
-                    if (lastMsgIdRef.current !== null) {
-                        triggerToast(newest.title, newest.body);
-                    }
+                    if (lastMsgIdRef.current !== null) { triggerToast(newest.title, newest.body); }
                     lastMsgIdRef.current = newest.id;
                 }
                 if (lastMsgIdRef.current === null) lastMsgIdRef.current = newest.id;
@@ -223,6 +204,7 @@ export default function Home() {
       } catch (error) { console.error(error); } finally { setClaimingBonus(false); }
   };
 
+  // --- NOVAS FUNÇÕES DE DELETAR ---
   const handleOpenNotifications = async () => {
       setShowNotifications(!showNotifications);
       if (!showNotifications && unreadCount > 0 && user) {
@@ -237,6 +219,27 @@ export default function Home() {
               await batch.commit();
           } catch (e) { console.error("Erro ao marcar lidas", e); }
       }
+  };
+
+  const deleteNotification = async (e: any, id: string) => {
+    e.stopPropagation(); // Evita abrir o link ao clicar na lixeira
+    if(!user) return;
+    try {
+        await deleteDoc(doc(db, 'users', user.uid, 'notifications', id));
+    } catch(e) { console.error("Erro ao deletar", e); }
+  };
+
+  const clearAllNotifications = async () => {
+    if(!user || notifications.length === 0) return;
+    if(!confirm("Limpar todas as notificações?")) return;
+    try {
+        const batch = writeBatch(db);
+        notifications.forEach(n => {
+            const ref = doc(db, 'users', user.uid, 'notifications', n.id);
+            batch.delete(ref);
+        });
+        await batch.commit();
+    } catch(e) { console.error("Erro limpar tudo", e); }
   };
 
   const handleOpenDeposit = () => user ? setIsDepositOpen(true) : setIsAuthOpen(true);
@@ -311,9 +314,31 @@ export default function Home() {
             <div className="relative">
                 <button onClick={handleOpenNotifications} className="bg-zinc-800 p-2 rounded-full text-zinc-400 hover:text-white relative"><Bell size={20} />{unreadCount > 0 && <span className="absolute top-0 right-0 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-zinc-800 animate-pulse"></span>}</button>
                 {showNotifications && (
-                    <div className="absolute right-0 top-12 w-72 bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl overflow-hidden z-50 animate-in fade-in">
-                        <div className="p-3 border-b border-zinc-800 bg-zinc-950 font-bold text-sm flex justify-between items-center"><span>Notificações</span><button onClick={() => setShowNotifications(false)}><X size={14}/></button></div>
-                        <div className="max-h-64 overflow-y-auto">{notifications.length > 0 ? (notifications.map(n => (<div key={n.id} className={`p-3 border-b border-zinc-800/50 hover:bg-zinc-800/50 ${!n.read ? 'bg-zinc-800/30' : ''}`}><div className="flex justify-between items-start mb-1"><p className={`text-xs font-bold ${!n.read ? 'text-white' : 'text-zinc-400'}`}>{n.title}</p>{!n.read && <span className="w-1.5 h-1.5 rounded-full bg-yellow-500"></span>}</div><p className="text-[10px] text-zinc-400 leading-relaxed">{n.body}</p><p className="text-[9px] text-zinc-600 mt-2 text-right">{n.createdAt?.toDate().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p></div>))) : <div className="p-6 text-center text-xs text-zinc-500">Você não tem notificações.</div>}</div>
+                    <div className="absolute right-0 top-12 w-80 bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl overflow-hidden z-50 animate-in fade-in">
+                        <div className="p-3 border-b border-zinc-800 bg-zinc-950 font-bold text-sm flex justify-between items-center">
+                            <span>Notificações</span>
+                            <div className="flex gap-2">
+                                {notifications.length > 0 && <button onClick={clearAllNotifications} className="text-[10px] text-zinc-500 hover:text-red-500 uppercase font-bold mr-2">Limpar Tudo</button>}
+                                <button onClick={() => setShowNotifications(false)}><X size={14}/></button>
+                            </div>
+                        </div>
+                        <div className="max-h-80 overflow-y-auto">
+                            {notifications.length > 0 ? (notifications.map(n => (
+                                <div key={n.id} onClick={() => { if(n.link && n.link !== '/') window.location.href = n.link; }} className={`p-3 border-b border-zinc-800/50 hover:bg-zinc-800/50 cursor-pointer relative group ${!n.read ? 'bg-zinc-800/30' : ''}`}>
+                                    <div className="flex justify-between items-start mb-1 pr-6">
+                                        <p className={`text-xs font-bold ${!n.read ? 'text-white' : 'text-zinc-400'}`}>{n.title}</p>
+                                        {!n.read && <span className="w-1.5 h-1.5 rounded-full bg-yellow-500"></span>}
+                                    </div>
+                                    <p className="text-[10px] text-zinc-400 leading-relaxed pr-4">{n.body}</p>
+                                    <p className="text-[9px] text-zinc-600 mt-2 text-right">{n.createdAt?.toDate().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
+                                    
+                                    {/* BOTÃO DE LIXEIRA */}
+                                    <button onClick={(e) => deleteNotification(e, n.id)} className="absolute top-3 right-2 text-zinc-600 hover:text-red-500 p-1 rounded transition-colors bg-zinc-900/50 md:opacity-0 md:group-hover:opacity-100">
+                                        <Trash2 size={12} />
+                                    </button>
+                                </div>
+                            ))) : <div className="p-6 text-center text-xs text-zinc-500">Você não tem notificações.</div>}
+                        </div>
                     </div>
                 )}
             </div>
@@ -323,6 +348,7 @@ export default function Home() {
 
         <div className="h-20"></div>
 
+        {/* ... (O RESTO DO CÓDIGO DO JOGO CONTINUA IGUAL DAQUI PRA BAIXO) ... */}
         {view === 'WINNERS' && (
              <main className="px-4 pb-8 animate-in fade-in slide-in-from-bottom-4 duration-500 md:max-w-7xl md:mx-auto">
                  <div className="text-center mb-8 mt-4"><h2 className="text-2xl font-black text-white uppercase italic">Galeria de <span style={{ color: layoutConfig.color }}>Ganhadores</span></h2></div>
