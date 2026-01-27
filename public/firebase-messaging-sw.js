@@ -13,46 +13,36 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const messaging = firebase.messaging();
 
-// 1. RECEBER E MOSTRAR (SIMPLES E DIRETO)
 messaging.onBackgroundMessage((payload) => {
   console.log('Notificação recebida:', payload);
 
-  // Pega os dados que mandamos da API
-  const { title, body, link } = payload.data;
+  // Pegamos a imagem que veio nos dados
+  const { title, body, image, link } = payload.data;
 
   const notificationOptions = {
     body: body,
-    icon: '/icon-192x192.png', // OBRIGATÓRIO: Seu logo
-    badge: '/icon-192x192.png', // O íconezinho branco na barra de status (Android)
-    data: { url: link || '/' }, // Guarda o link para usar no clique
+    icon: '/icon-192x192.png', // Logo colorida na direita/expandida
+    badge: '/badge.png',        // O ÍCONE TRANSPARENTE (ESQUERDA)
+    image: image,               // <--- O BANNER GRANDE (YOUTUBE STYLE)
+    data: { url: link || '/' },
     vibrate: [200, 100, 200],
-    requireInteraction: true // Faz a notificação ficar na tela até clicar
+    requireInteraction: true
   };
 
-  // Mostra a notificação
   return self.registration.showNotification(title, notificationOptions);
 });
 
-// 2. CLICAR E ABRIR
 self.addEventListener('notificationclick', function(event) {
-  event.notification.close(); // Fecha a notificação
-  
-  // Pega o link que guardamos acima
+  event.notification.close();
   const urlToOpen = event.notification.data.url;
 
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
-      // Tenta focar numa aba já aberta
       for (let i = 0; i < windowClients.length; i++) {
         const client = windowClients[i];
-        if (client.url === urlToOpen && 'focus' in client) {
-          return client.focus();
-        }
+        if (client.url === urlToOpen && 'focus' in client) return client.focus();
       }
-      // Se não tiver, abre uma nova
-      if (clients.openWindow) {
-        return clients.openWindow(urlToOpen);
-      }
+      if (clients.openWindow) return clients.openWindow(urlToOpen);
     })
   );
 });
