@@ -4,7 +4,9 @@ import { db } from '@/lib/firebase';
 import { collection, getDocs, addDoc, serverTimestamp } from 'firebase/firestore';
 import * as admin from 'firebase-admin';
 
-// Inicialização padrão...
+// CONFIGURAÇÃO DO ÍCONE (JÁ ESTÁ CERTA)
+const ICON_URL = 'https://www.raspadourada.com/icon-192x192.png';
+
 if (!admin.apps.length) {
   const privateKey = process.env.FIREBASE_PRIVATE_KEY 
     ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n') 
@@ -31,7 +33,7 @@ export async function POST(request: Request) {
     const snapshot = await getDocs(usersRef);
     const tokensToSend: string[] = [];
 
-    // Salva no banco (igual antes)
+    // Salva no banco
     const dbPromises = snapshot.docs.map(async (userDoc) => {
         await addDoc(collection(db, 'users', userDoc.id, 'notifications'), {
             title, body, image: image || null, link: link || '/', read: false, createdAt: serverTimestamp()
@@ -48,22 +50,38 @@ export async function POST(request: Request) {
     let successCount = 0;
     if (tokensToSend.length > 0 && admin.apps.length) {
         
-        // VOLTAMOS AO CÓDIGO CLÁSSICO
-        // Tudo dentro de 'data'. Sem 'notification'. Sem prioridade Android.
+        // --- MODO NATIVO (O QUE O J7 GOSTA) ---
+        // Ao usar 'notification', o Sistema Operacional assume o controle.
+        // Isso resolve o problema do "Silêncio" porque não depende do browser rodar script.
+        
         const message = {
-            data: {
+            notification: {
                 title: title,
                 body: body,
-                image: image || "", 
-                link: link || "/", // Seu código antigo usava 'link' aqui
+                image: image || "", // Banner grande
             },
-            tokens: tokensToSend
+            data: {
+                url: link || "/",
+                click_action: link || "/" 
+            },
+            tokens: tokensToSend,
+            android: {
+                priority: 'high', // Acorda o J7
+                notification: {
+                    icon: 'stock_ticker_update', // Ícone nativo do sistema (garantia se a imagem falhar)
+                    color: '#000000',
+                    priority: 'max',
+                    defaultSound: true,
+                    defaultVibrateTimings: true,
+                    visibility: 'public'
+                }
+            }
         };
         
         try {
             const response = await admin.messaging().sendEachForMulticast(message);
             successCount = response.successCount;
-            console.log(`Push Clássico enviado: ${successCount}`);
+            console.log(`Push Nativo J7 enviado: ${successCount}`);
         } catch (pushError) {
             console.error("Erro push:", pushError);
         }
