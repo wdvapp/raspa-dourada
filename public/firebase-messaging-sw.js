@@ -14,44 +14,22 @@ firebase.initializeApp(firebaseConfig);
 const messaging = firebase.messaging();
 
 messaging.onBackgroundMessage((payload) => {
-  console.log('Notificação no SW:', payload);
-
+  // Esse código tenta mostrar o banner se o sistema Android falhar
   const title = payload.notification?.title || payload.data?.title || 'Raspa Dourada';
   const body = payload.notification?.body || payload.data?.body || 'Nova mensagem';
-  const image = payload.notification?.image || payload.data?.image || '';
+  const image = payload.notification?.image || payload.data?.image || '/icon-192x192.png';
   const link = payload.data?.url || payload.data?.link || '/';
 
-  const notificationOptions = {
+  return self.registration.showNotification(title, {
     body: body,
     icon: '/icon-192x192.png',
     image: image,
-    badge: '/badge.png',
-    vibrate: [200, 100, 200, 100, 200], // Vibração mais longa e chata
-    requireInteraction: true,
-    
-    // --- O SEGREDO DO POP-UP ---
-    tag: 'push-notification-' + Date.now(), // Cria uma tag única para forçar ser "nova"
-    renotify: true, // Obriga o celular a tocar e vibrar de novo mesmo se tiver outra
-    // ---------------------------
-
     data: { url: link }
-  };
-
-  return self.registration.showNotification(title, notificationOptions);
+  });
 });
 
-// Clique na notificação
 self.addEventListener('notificationclick', function(event) {
   event.notification.close();
   const urlToOpen = event.notification.data.url || '/';
-
-  event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
-      for (let i = 0; i < windowClients.length; i++) {
-        const client = windowClients[i];
-        if (client.url.includes(urlToOpen) && 'focus' in client) return client.focus();
-      }
-      if (clients.openWindow) return clients.openWindow(urlToOpen);
-    })
-  );
+  event.waitUntil(clients.openWindow(urlToOpen));
 });

@@ -4,7 +4,6 @@ import { db } from '@/lib/firebase';
 import { collection, getDocs, addDoc, serverTimestamp } from 'firebase/firestore';
 import * as admin from 'firebase-admin';
 
-// Inicialização do Admin (padrão)
 if (!admin.apps.length) {
   const privateKey = process.env.FIREBASE_PRIVATE_KEY 
     ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n') 
@@ -31,7 +30,7 @@ export async function POST(request: Request) {
     const snapshot = await getDocs(usersRef);
     const tokensToSend: string[] = [];
 
-    // Salva no banco (Histórico)
+    // Salva no banco
     const dbPromises = snapshot.docs.map(async (userDoc) => {
         await addDoc(collection(db, 'users', userDoc.id, 'notifications'), {
             title, body, image: image || null, link: link || '/', read: false, createdAt: serverTimestamp()
@@ -48,27 +47,39 @@ export async function POST(request: Request) {
     let successCount = 0;
     if (tokensToSend.length > 0 && admin.apps.length) {
         
-        // --- AQUI ESTÁ O TRUQUE ---
-        // Não usamos mais 'notification'. Jogamos TUDO dentro de 'data'.
-        // Isso obriga o Service Worker a construir a notificação visual manualmente,
-        // garantindo que as configurações de prioridade e pop-up funcionem.
+        // --- MODO HÍBRIDO TURBO ---
+        // Voltamos com 'notification' para garantir que CHEGA (resolve o silêncio).
+        // Adicionamos 'android priority max' para tentar forçar o Banner.
+        
         const message = {
-            data: {
+            notification: {
                 title: title,
                 body: body,
-                image: image || "", 
+                image: image || "",
+            },
+            data: {
                 url: link || "/",
                 click_action: link || "/" 
             },
             tokens: tokensToSend,
             
-            // Prioridade alta pro celular não "dormir" no processo
+            // CONFIGURAÇÃO DE ALTA PRIORIDADE DO ANDROID
             android: {
-                priority: 'high'
+                priority: 'high',
+                notification: {
+                    priority: 'max',     // <--- Força máxima
+                    defaultSound: true,
+                    defaultVibrateTimings: true,
+                    visibility: 'public', // <--- Mostra na tela de bloqueio
+                    channelId: 'high_importance_channel' // Tenta criar um canal novo
+                }
             },
             webpush: {
                 headers: {
                     Urgency: "high"
+                },
+                fcmOptions: {
+                    link: link || "/"
                 }
             }
         };
@@ -76,7 +87,7 @@ export async function POST(request: Request) {
         try {
             const response = await admin.messaging().sendEachForMulticast(message);
             successCount = response.successCount;
-            console.log(`Push Data-Only enviado: ${successCount}`);
+            console.log(`Push Híbrido Max enviado: ${successCount}`);
         } catch (pushError) {
             console.error("Erro push:", pushError);
         }
