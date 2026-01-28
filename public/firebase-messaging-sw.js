@@ -14,27 +14,34 @@ firebase.initializeApp(firebaseConfig);
 const messaging = firebase.messaging();
 
 messaging.onBackgroundMessage((payload) => {
-  console.log('SW Recebido:', payload);
+  console.log('Notificação recebida:', payload);
 
-  const title = payload.notification?.title || payload.data?.title || 'Raspa Dourada';
-  const body = payload.notification?.body || payload.data?.body || 'Nova mensagem';
-  const image = payload.notification?.image || payload.data?.image || '';
-  const link = payload.data?.url || payload.data?.link || '/';
-  
-  // Caminho absoluto para garantir que o J7 ache a imagem
-  const iconUrl = self.location.origin + '/icon-192x192.png';
+  // O SEGREDO: Seu código antigo lia de 'payload.data'
+  const { title, body, image, link } = payload.data;
 
-  return self.registration.showNotification(title, {
+  const notificationOptions = {
     body: body,
-    icon: iconUrl, 
-    image: image,
+    icon: '/icon-192x192.png',
+    image: image, // O Banner
+    data: { url: link || '/' }, // O Link
     vibrate: [200, 100, 200],
-    data: { url: link }
-  });
+    requireInteraction: true
+  };
+
+  return self.registration.showNotification(title, notificationOptions);
 });
 
 self.addEventListener('notificationclick', function(event) {
   event.notification.close();
-  const urlToOpen = event.notification.data.url || '/';
-  event.waitUntil(clients.openWindow(urlToOpen));
+  const urlToOpen = event.notification.data.url;
+
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
+      for (let i = 0; i < windowClients.length; i++) {
+        const client = windowClients[i];
+        if (client.url === urlToOpen && 'focus' in client) return client.focus();
+      }
+      if (clients.openWindow) return clients.openWindow(urlToOpen);
+    })
+  );
 });
