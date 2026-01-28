@@ -14,47 +14,35 @@ firebase.initializeApp(firebaseConfig);
 const messaging = firebase.messaging();
 
 messaging.onBackgroundMessage((payload) => {
-  console.log('Notificação em Background:', payload);
+  console.log('Notificação recebida:', payload);
 
-  // 1. Tenta pegar do bloco 'notification' (Padrão do Firebase Console)
-  // 2. Se não tiver, tenta pegar do bloco 'data' (Backend personalizado)
-  const title = payload.notification?.title || payload.data?.title || 'Raspa Dourada';
-  const body = payload.notification?.body || payload.data?.body || 'Nova mensagem!';
-  const image = payload.notification?.image || payload.data?.image || '/icon-512x512.png';
-  const icon = '/icon-192x192.png';
-  const link = payload.data?.link || payload.data?.url || '/';
+  // Pegamos a imagem que veio nos dados
+  const { title, body, image, link } = payload.data;
 
   const notificationOptions = {
     body: body,
-    icon: icon,
-    image: image, // Banner grande (estilo YouTube)
-    badge: '/badge.png', // Ícone pequeno na barra
+    icon: '/icon-192x192.png', // Logo colorida na direita/expandida
+    badge: '/badge.png',        // O ÍCONE TRANSPARENTE (ESQUERDA)
+    image: image,               // <--- O BANNER GRANDE (YOUTUBE STYLE)
+    data: { url: link || '/' },
     vibrate: [200, 100, 200],
-    requireInteraction: true, // Obriga o usuário a interagir para sumir
-    data: { url: link }
+    requireInteraction: true
   };
 
   return self.registration.showNotification(title, notificationOptions);
 });
 
-// Ao clicar na notificação, abre o app
 self.addEventListener('notificationclick', function(event) {
   event.notification.close();
-  const urlToOpen = event.notification.data.url || '/';
+  const urlToOpen = event.notification.data.url;
 
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
-      // Se já tiver uma aba aberta, foca nela
       for (let i = 0; i < windowClients.length; i++) {
         const client = windowClients[i];
-        if (client.url.includes(urlToOpen) && 'focus' in client) {
-          return client.focus();
-        }
+        if (client.url === urlToOpen && 'focus' in client) return client.focus();
       }
-      // Se não, abre uma nova
-      if (clients.openWindow) {
-        return clients.openWindow(urlToOpen);
-      }
+      if (clients.openWindow) return clients.openWindow(urlToOpen);
     })
   );
 });
