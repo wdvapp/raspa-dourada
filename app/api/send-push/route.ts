@@ -30,7 +30,7 @@ export async function POST(request: Request) {
     const snapshot = await getDocs(usersRef);
     const tokensToSend: string[] = [];
 
-    // Salva no banco
+    // Salva no Banco de Dados
     const dbPromises = snapshot.docs.map(async (userDoc) => {
         await addDoc(collection(db, 'users', userDoc.id, 'notifications'), {
             title, body, image: image || null, link: link || '/', read: false, createdAt: serverTimestamp()
@@ -47,15 +47,17 @@ export async function POST(request: Request) {
     let successCount = 0;
     if (tokensToSend.length > 0 && admin.apps.length) {
         
-        // MODO HÍBRIDO SIMPLES
-        // Funciona tanto para o A71 (lê notification) quanto para o J7 (lê data no SW)
+        // --- CORREÇÃO VISUAL PARA O J7 ---
         const message = {
             notification: {
                 title: title,
                 body: body,
+                // AQUI: Forçamos o ícone explicitamente para não ficar "invisível"
+                icon: '/icon-192x192.png', 
+                image: image || "", 
             },
             data: {
-                title: title, // Repete no data para o SW do J7 usar
+                title: title,
                 body: body,
                 image: image || "", 
                 url: link || "/",
@@ -63,13 +65,22 @@ export async function POST(request: Request) {
             },
             tokens: tokensToSend,
             android: {
-                priority: 'high' // Única config necessária para o A71
+                priority: 'high',
+                notification: {
+                    priority: 'max',
+                    defaultSound: true,
+                    defaultVibrateTimings: true,
+                    // Garante que o ícone seja usado no Android também
+                    icon: 'stock_ticker_update', 
+                    color: '#000000' 
+                }
             }
         };
         
         try {
             const response = await admin.messaging().sendEachForMulticast(message);
             successCount = response.successCount;
+            console.log(`Push J7 Visual enviado: ${successCount}`);
         } catch (pushError) {
             console.error("Erro push:", pushError);
         }
