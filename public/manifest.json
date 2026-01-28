@@ -1,6 +1,7 @@
 {
   "name": "Raspa Dourada",
   "short_name": "Raspa Dourada",
+  "gcm_sender_id": "103953800507",
   "theme_color": "#000000",
   "background_color": "#000000",
   "display": "standalone",

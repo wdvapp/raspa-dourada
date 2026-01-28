@@ -1,17 +1,17 @@
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
+import NotificationManager from "@/components/NotificationManager"; // <--- IMPORTANTE
 
 const inter = Inter({ subsets: ["latin"] });
 
-// --- CONFIGURAÇÃO PWA ---
 export const metadata: Metadata = {
   title: "Raspa Dourada", 
   description: "O melhor app de raspadinhas",
-  manifest: '/manifest.json', // <--- ISSO GARANTE QUE O APP (192/512) FUNCIONE
+  manifest: '/manifest.json',
   icons: {
-    icon: '/icon.png', // <--- ISSO GARANTE O FAVICON NA ABA
-    apple: '/icon.png', // Opcional: para iPhone
+    icon: '/icon.png',
+    apple: '/icon.png',
   },
 };
 
@@ -35,7 +35,10 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
       </head>
-      <body className={inter.className}>{children}</body>
+      <body className={inter.className}>
+        <NotificationManager /> {/* <--- O CÓDIGO QUE LIGA TUDO */}
+        {children}
+      </body>
     </html>
   );
 }
