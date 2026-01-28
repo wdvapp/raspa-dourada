@@ -4,6 +4,7 @@ import { db } from '@/lib/firebase';
 import { collection, getDocs, addDoc, serverTimestamp } from 'firebase/firestore';
 import * as admin from 'firebase-admin';
 
+// Inicialização do Admin (padrão)
 if (!admin.apps.length) {
   const privateKey = process.env.FIREBASE_PRIVATE_KEY 
     ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n') 
@@ -26,11 +27,11 @@ export async function POST(request: Request) {
 
     if (!title || !body) return NextResponse.json({ success: false, error: 'Dados incompletos' }, { status: 400 });
 
-    // 1. Salva no Histórico do Usuário (Isso continua igual)
     const usersRef = collection(db, 'users');
     const snapshot = await getDocs(usersRef);
     const tokensToSend: string[] = [];
 
+    // Salva no banco (Histórico)
     const dbPromises = snapshot.docs.map(async (userDoc) => {
         await addDoc(collection(db, 'users', userDoc.id, 'notifications'), {
             title, body, image: image || null, link: link || '/', read: false, createdAt: serverTimestamp()
@@ -47,27 +48,23 @@ export async function POST(request: Request) {
     let successCount = 0;
     if (tokensToSend.length > 0 && admin.apps.length) {
         
-        // --- A MÁGICA ACONTECE AQUI ---
-        // Adicionamos o bloco 'notification' para o Android respeitar
+        // --- AQUI ESTÁ O TRUQUE ---
+        // Não usamos mais 'notification'. Jogamos TUDO dentro de 'data'.
+        // Isso obriga o Service Worker a construir a notificação visual manualmente,
+        // garantindo que as configurações de prioridade e pop-up funcionem.
         const message = {
-            notification: {
+            data: {
                 title: title,
                 body: body,
-                image: image || "", // A imagem aparece nativa do Android
-            },
-            data: {
-                // Mantemos o data para garantir que o link funcione
-                url: link || "/", 
+                image: image || "", 
+                url: link || "/",
                 click_action: link || "/" 
             },
             tokens: tokensToSend,
+            
+            // Prioridade alta pro celular não "dormir" no processo
             android: {
-                priority: 'high', // Força prioridade máxima
-                notification: {
-                    priority: 'max',
-                    defaultSound: true,
-                    defaultVibrateTimings: true
-                }
+                priority: 'high'
             },
             webpush: {
                 headers: {
@@ -79,7 +76,7 @@ export async function POST(request: Request) {
         try {
             const response = await admin.messaging().sendEachForMulticast(message);
             successCount = response.successCount;
-            console.log(`Push Híbrido enviado: ${successCount}`);
+            console.log(`Push Data-Only enviado: ${successCount}`);
         } catch (pushError) {
             console.error("Erro push:", pushError);
         }
