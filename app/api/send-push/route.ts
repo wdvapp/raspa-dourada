@@ -47,47 +47,29 @@ export async function POST(request: Request) {
     let successCount = 0;
     if (tokensToSend.length > 0 && admin.apps.length) {
         
-        // --- MODO HÍBRIDO TURBO ---
-        // Voltamos com 'notification' para garantir que CHEGA (resolve o silêncio).
-        // Adicionamos 'android priority max' para tentar forçar o Banner.
-        
+        // MODO HÍBRIDO SIMPLES
+        // Funciona tanto para o A71 (lê notification) quanto para o J7 (lê data no SW)
         const message = {
             notification: {
                 title: title,
                 body: body,
-                image: image || "",
             },
             data: {
+                title: title, // Repete no data para o SW do J7 usar
+                body: body,
+                image: image || "", 
                 url: link || "/",
                 click_action: link || "/" 
             },
             tokens: tokensToSend,
-            
-            // CONFIGURAÇÃO DE ALTA PRIORIDADE DO ANDROID
             android: {
-                priority: 'high',
-                notification: {
-                    priority: 'max',     // <--- Força máxima
-                    defaultSound: true,
-                    defaultVibrateTimings: true,
-                    visibility: 'public', // <--- Mostra na tela de bloqueio
-                    channelId: 'high_importance_channel' // Tenta criar um canal novo
-                }
-            },
-            webpush: {
-                headers: {
-                    Urgency: "high"
-                },
-                fcmOptions: {
-                    link: link || "/"
-                }
+                priority: 'high' // Única config necessária para o A71
             }
         };
         
         try {
             const response = await admin.messaging().sendEachForMulticast(message);
             successCount = response.successCount;
-            console.log(`Push Híbrido Max enviado: ${successCount}`);
         } catch (pushError) {
             console.error("Erro push:", pushError);
         }
