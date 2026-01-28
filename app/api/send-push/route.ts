@@ -4,6 +4,9 @@ import { db } from '@/lib/firebase';
 import { collection, getDocs, addDoc, serverTimestamp } from 'firebase/firestore';
 import * as admin from 'firebase-admin';
 
+// CONFIGURAÇÃO JÁ APLICADA COM SEU LINK REAL
+const ICON_URL = 'https://www.raspadourada.com/icon-192x192.png';
+
 if (!admin.apps.length) {
   const privateKey = process.env.FIREBASE_PRIVATE_KEY 
     ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n') 
@@ -30,7 +33,7 @@ export async function POST(request: Request) {
     const snapshot = await getDocs(usersRef);
     const tokensToSend: string[] = [];
 
-    // Salva no Banco de Dados
+    // 1. Salva no histórico do banco
     const dbPromises = snapshot.docs.map(async (userDoc) => {
         await addDoc(collection(db, 'users', userDoc.id, 'notifications'), {
             title, body, image: image || null, link: link || '/', read: false, createdAt: serverTimestamp()
@@ -47,14 +50,13 @@ export async function POST(request: Request) {
     let successCount = 0;
     if (tokensToSend.length > 0 && admin.apps.length) {
         
-        // --- CORREÇÃO VISUAL PARA O J7 ---
+        // 2. Monta a mensagem com o ÍCONE GARANTIDO
         const message = {
             notification: {
                 title: title,
                 body: body,
-                // AQUI: Forçamos o ícone explicitamente para não ficar "invisível"
-                icon: '/icon-192x192.png', 
-                image: image || "", 
+                icon: ICON_URL, // <--- Link direto para a sua logo online
+                image: image || "",
             },
             data: {
                 title: title,
@@ -70,9 +72,13 @@ export async function POST(request: Request) {
                     priority: 'max',
                     defaultSound: true,
                     defaultVibrateTimings: true,
-                    // Garante que o ícone seja usado no Android também
-                    icon: 'stock_ticker_update', 
+                    icon: ICON_URL, // <--- Reforço para o Android
                     color: '#000000' 
+                }
+            },
+            webpush: {
+                headers: {
+                    Urgency: "high"
                 }
             }
         };
@@ -80,7 +86,7 @@ export async function POST(request: Request) {
         try {
             const response = await admin.messaging().sendEachForMulticast(message);
             successCount = response.successCount;
-            console.log(`Push J7 Visual enviado: ${successCount}`);
+            console.log(`Push com Link Absoluto enviado: ${successCount}`);
         } catch (pushError) {
             console.error("Erro push:", pushError);
         }
