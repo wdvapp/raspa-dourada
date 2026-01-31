@@ -8,6 +8,10 @@ import { getAuth, onAuthStateChanged } from 'firebase/auth';
 import { useRouter } from 'next/navigation';
 import { DollarSign, Users, TrendingUp, Calendar, Megaphone, Gift, Save, Send, Loader2, Lock, Clock, Trash2, CheckCircle } from 'lucide-react';
 
+// --- NOVO: IMPORTAMOS A BARRA DE BUSCA ---
+import AdminUserSearch from '@/components/AdminUserSearch'; 
+// ----------------------------------------
+
 export default function AdminDashboard() {
   const router = useRouter();
   const [isAuthorized, setIsAuthorized] = useState(false);
@@ -27,8 +31,8 @@ export default function AdminDashboard() {
   const [notifMode, setNotifMode] = useState<'NOW' | 'SCHEDULE'>('NOW');
   const [notifTitle, setNotifTitle] = useState('');
   const [notifBody, setNotifBody] = useState('');
-  const [notifImage, setNotifImage] = useState(''); // <--- NOVO
-  const [notifLink, setNotifLink] = useState('');   // <--- NOVO
+  const [notifImage, setNotifImage] = useState(''); 
+  const [notifLink, setNotifLink] = useState('');   
   const [scheduleDate, setScheduleDate] = useState(''); 
   const [scheduleTime, setScheduleTime] = useState(''); 
   const [sendingPush, setSendingPush] = useState(false);
@@ -120,7 +124,6 @@ export default function AdminDashboard() {
                   await fetch('/api/send-push', {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
-                      // ATUALIZADO: ENVIA IMAGEM E LINK NO AGENDAMENTO TAMBÉM
                       body: JSON.stringify({ 
                           title: data.title, 
                           body: data.body,
@@ -157,7 +160,6 @@ export default function AdminDashboard() {
             const res = await fetch('/api/send-push', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                // ATUALIZADO: ENVIA IMAGEM E LINK
                 body: JSON.stringify({ 
                     title: notifTitle, 
                     body: notifBody,
@@ -184,8 +186,8 @@ export default function AdminDashboard() {
             await addDoc(collection(db, 'scheduled_messages'), {
                 title: notifTitle,
                 body: notifBody,
-                image: notifImage, // Salva imagem
-                link: notifLink,   // Salva link
+                image: notifImage, 
+                link: notifLink,   
                 scheduledAt: Timestamp.fromDate(scheduledDateTime),
                 status: 'pending',
                 createdAt: serverTimestamp()
@@ -215,14 +217,21 @@ export default function AdminDashboard() {
         <div><h1 className="text-3xl font-black text-white flex items-center gap-2"><Lock className="text-green-500 mb-1" size={28}/> Painel Administrativo</h1><p className="text-zinc-500">Gestão completa da plataforma.</p></div>
       </div>
 
+      {/* DASHBOARD CARDS */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="bg-gradient-to-br from-green-900 to-green-950 border border-green-800 p-8 rounded-3xl relative overflow-hidden group"><div className="absolute top-0 right-0 p-8 opacity-10 group-hover:scale-110 transition-transform"><DollarSign size={100} /></div><p className="text-green-400 font-bold uppercase tracking-wider text-sm mb-2 flex items-center gap-2"><TrendingUp size={16} /> Faturamento Hoje</p><h2 className="text-5xl font-black text-white">R$ {stats.todayRevenue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</h2></div>
         <div className="bg-zinc-900 border border-zinc-800 p-8 rounded-3xl relative overflow-hidden"><div className="absolute top-0 right-0 p-8 opacity-5"><Calendar size={100} className="text-[#ffc700]" /></div><p className="text-zinc-500 font-bold uppercase tracking-wider text-sm mb-2">Últimos 7 Dias</p><h2 className="text-5xl font-black text-white">R$ {stats.weekRevenue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</h2></div>
       </div>
 
+      {/* --- AQUI ENTRA O COMPONENTE DE BUSCA (MODO DEUS) --- */}
+      {/* Ele já vem estilizado com fundo escuro e bordas, encaixa perfeito */}
+      <AdminUserSearch />
+      {/* --------------------------------------------------- */}
+
       <h2 className="text-2xl font-bold text-white flex items-center gap-2 mt-4"><Megaphone className="text-purple-500" /> Central de Marketing</h2>
       
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          {/* PAINEL DE NOTIFICAÇÃO */}
           <div className="bg-zinc-900 p-6 rounded-2xl border border-zinc-800 shadow-xl">
             <div className="flex items-center gap-3 mb-6 pb-4 border-b border-zinc-800"><div className="p-3 bg-yellow-500/20 rounded-full text-yellow-500"><Megaphone size={24} /></div><div><h3 className="text-lg font-bold text-white">Criar Notificação</h3><p className="text-xs text-zinc-500">Envie agora ou agende para depois.</p></div></div>
             <div className="flex bg-zinc-950 p-1 rounded-xl mb-4 border border-zinc-800">
@@ -233,15 +242,14 @@ export default function AdminDashboard() {
                 <input type="text" placeholder="Título (ex: Bônus Surpresa!)" value={notifTitle} onChange={(e) => setNotifTitle(e.target.value)} className="w-full bg-black/20 border border-zinc-700 rounded-xl p-3 text-white focus:border-yellow-500 outline-none font-bold" />
                 <textarea rows={2} placeholder="Mensagem (ex: Ganhe 100% no depósito hoje)" value={notifBody} onChange={(e) => setNotifBody(e.target.value)} className="w-full bg-black/20 border border-zinc-700 rounded-xl p-3 text-white focus:border-yellow-500 outline-none resize-none text-sm" />
                 
-                {/* --- NOVOS CAMPOS VISUAIS --- */}
                 <div className="grid grid-cols-2 gap-4">
                     <div>
-                         <label className="text-[10px] uppercase font-bold text-zinc-500 mb-1 block">URL da Imagem (Opcional)</label>
-                         <input type="text" placeholder="https://..." value={notifImage} onChange={(e) => setNotifImage(e.target.value)} className="w-full bg-black/20 border border-zinc-700 rounded-xl p-2 text-white text-xs" />
+                          <label className="text-[10px] uppercase font-bold text-zinc-500 mb-1 block">URL da Imagem (Opcional)</label>
+                          <input type="text" placeholder="https://..." value={notifImage} onChange={(e) => setNotifImage(e.target.value)} className="w-full bg-black/20 border border-zinc-700 rounded-xl p-2 text-white text-xs" />
                     </div>
                     <div>
-                         <label className="text-[10px] uppercase font-bold text-zinc-500 mb-1 block">Link de Destino (Opcional)</label>
-                         <input type="text" placeholder="/games ou https://..." value={notifLink} onChange={(e) => setNotifLink(e.target.value)} className="w-full bg-black/20 border border-zinc-700 rounded-xl p-2 text-white text-xs" />
+                          <label className="text-[10px] uppercase font-bold text-zinc-500 mb-1 block">Link de Destino (Opcional)</label>
+                          <input type="text" placeholder="/games ou https://..." value={notifLink} onChange={(e) => setNotifLink(e.target.value)} className="w-full bg-black/20 border border-zinc-700 rounded-xl p-2 text-white text-xs" />
                     </div>
                 </div>
 
@@ -256,11 +264,13 @@ export default function AdminDashboard() {
           </div>
 
           <div className="space-y-8">
+              {/* BÔNUS DIÁRIO */}
               <div className="bg-zinc-900 p-6 rounded-2xl border border-zinc-800 shadow-xl">
                 <div className="flex items-center justify-between mb-4"><div className="flex items-center gap-3"><div className="p-2 bg-purple-500/20 rounded-full text-purple-400"><Gift size={20} /></div><span className="font-bold text-white text-sm">Bônus Diário</span></div><div className="flex items-center bg-black/20 p-1 rounded-lg border border-zinc-700"><span className="text-xs text-zinc-400 mr-2 ml-2">Ativo?</span><button onClick={() => setBonusActive(!bonusActive)} className={`w-10 h-5 rounded-full relative transition-colors ${bonusActive ? 'bg-green-500' : 'bg-zinc-700'}`}><div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-all ${bonusActive ? 'left-5.5' : 'left-0.5'}`}></div></button></div></div>
                 <div className="flex gap-2"><input type="number" value={bonusAmount} onChange={(e) => setBonusAmount(Number(e.target.value))} className="flex-1 bg-black/20 border border-zinc-700 rounded-xl px-3 text-white font-bold" /><button onClick={handleSaveBonus} disabled={loadingBonus} className="bg-purple-600 hover:bg-purple-500 text-white px-4 rounded-xl font-bold text-sm">{loadingBonus ? '...' : 'Salvar'}</button></div>
               </div>
 
+              {/* FILA DE MENSAGENS */}
               <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden h-[300px] flex flex-col">
                   <div className="p-4 border-b border-zinc-800 bg-zinc-950/50"><h3 className="font-bold text-white text-sm flex items-center gap-2"><Clock size={16} className="text-purple-500"/> Fila de Agendamentos</h3></div>
                   <div className="overflow-y-auto flex-1 p-2 space-y-2">{scheduledList.length > 0 ? scheduledList.map((item) => (<div key={item.id} className="bg-zinc-950 border border-zinc-800 p-3 rounded-xl flex justify-between items-center group"><div><p className="text-xs font-bold text-white">{item.title}</p><p className="text-[10px] text-zinc-500">{item.scheduledAt?.toDate().toLocaleString('pt-BR')}</p></div><button onClick={() => handleDeleteSchedule(item.id)} className="text-zinc-600 hover:text-red-500 p-2"><Trash2 size={16}/></button></div>)) : <div className="text-center text-zinc-600 text-xs py-10">Nenhuma mensagem agendada.</div>}</div>
