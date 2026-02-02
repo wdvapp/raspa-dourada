@@ -1,7 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
-import NotificationManager from "@/components/NotificationManager"; // <--- IMPORTANTE
+import NotificationManager from "@/components/NotificationManager"; 
+import GoogleAnalytics from "@/components/GoogleAnalytics"; // <--- NOVO: IMPORTADO AQUI
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -36,9 +37,13 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
       </head>
       <body className={inter.className}>
-        <NotificationManager /> {/* <--- O CÓDIGO QUE LIGA TUDO */}
+        
+        {/* --- GOOGLE ANALYTICS ATIVO --- */}
+        <GoogleAnalytics gaId="G-R3EK4B9M62" />
+        
+        <NotificationManager /> 
         {children}
       </body>
     </html>
   );
-} 
+}
