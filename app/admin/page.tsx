@@ -211,7 +211,7 @@ export default function AdminDashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           {/* PAINEL DE NOTIFICAÇÃO */}
           <div className="bg-zinc-900 p-6 rounded-2xl border border-zinc-800 shadow-xl">
-             {/* ... (Mesmo código de notificação de antes) ... */}
+            {/* ... (Mesmo código de notificação de antes) ... */}
             <div className="flex items-center gap-3 mb-6 pb-4 border-b border-zinc-800"><div className="p-3 bg-yellow-500/20 rounded-full text-yellow-500"><Megaphone size={24} /></div><div><h3 className="text-lg font-bold text-white">Criar Notificação</h3><p className="text-xs text-zinc-500">Envie agora ou agende para depois.</p></div></div>
             <div className="flex bg-zinc-950 p-1 rounded-xl mb-4 border border-zinc-800">
                 <button onClick={() => setNotifMode('NOW')} className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${notifMode === 'NOW' ? 'bg-yellow-500 text-black shadow' : 'text-zinc-500 hover:text-white'}`}>ENVIAR AGORA</button>
@@ -326,6 +326,28 @@ export default function AdminDashboard() {
         </div>
 
       </div>
+
+      {/* RODAPÉ DO ADMIN - MODO FANTASMA (AQUI ESTÁ A NOVIDADE) */}
+      <div className="mt-12 p-6 border-t border-zinc-800 text-center">
+        <p className="text-zinc-500 text-xs mb-4">Ferramentas de Desenvolvedor</p>
+        
+        <button 
+          onClick={() => {
+            const isGhost = localStorage.getItem('RASPA_INTERNAL_USER');
+            if (isGhost) {
+              localStorage.removeItem('RASPA_INTERNAL_USER');
+              alert('👁️ Você agora ESTÁ VISÍVEL para o Analytics.');
+            } else {
+              localStorage.setItem('RASPA_INTERNAL_USER', 'true');
+              alert('👻 Modo Fantasma ATIVADO! Suas visitas não contam mais.');
+            }
+          }}
+          className="text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-400 py-2 px-4 rounded-full border border-zinc-700 transition-colors"
+        >
+          Alternar Modo Fantasma (Analytics)
+        </button>
+      </div>
+
     </div>
   );
 }
