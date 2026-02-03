@@ -3,24 +3,47 @@
 import Script from 'next/script';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import { getAuth, onAuthStateChanged } from 'firebase/auth';
+import { app } from '@/lib/firebase'; // Certifique-se que o caminho está certo
+
+// --- LISTA VIP (Modo Fantasma Automático) ---
+const ADMIN_EMAILS = [
+  'wallacevale20@gmail.com',       // <--- COLOQUE SEU EMAIL AQUI
+  'thiagodesouzateles@gmail.com'   // <--- COLOQUE O EMAIL DELE AQUI
+];
 
 export default function GoogleAnalytics({ gaId }: { gaId: string }) {
   const pathname = usePathname();
-  const [isInternalUser, setIsInternalUser] = useState(false);
+  const [allowTracking, setAllowTracking] = useState(false);
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
 
   useEffect(() => {
-    // Verifica se existe a "marca" de desenvolvedor no navegador
-    const checkInternal = localStorage.getItem('RASPA_INTERNAL_USER');
-    if (checkInternal === 'true') {
-      setIsInternalUser(true);
-      console.log('👻 Modo Fantasma Ativo: Analytics Bloqueado');
+    // 1. Bloqueio imediato se estiver na URL do admin
+    if (window.location.pathname.startsWith('/admin')) {
+      setAllowTracking(false);
+      setIsCheckingAuth(false);
+      return;
     }
-  }, []);
 
-  // SE NÃO TIVER ID, SE FOR ADMIN, OU SE FOR USUÁRIO INTERNO -> NÃO RASTREIA
-  if (!gaId) return null;
-  if (pathname?.startsWith('/admin')) return null;
-  if (isInternalUser) return null; // <--- AQUI ESTÁ O TRUQUE
+    // 2. Pergunta ao Firebase: "Quem está aí?"
+    const auth = getAuth(app);
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user && user.email && ADMIN_EMAILS.includes(user.email)) {
+        // É O DONO! BLOQUEIA TUDO.
+        console.log(`👻 Modo Fantasma Automático: Olá ${user.email}, Analytics Bloqueado.`);
+        setAllowTracking(false);
+      } else {
+        // É um usuário comum (ou não logado) -> LIBERA O RASTREIO
+        setAllowTracking(true);
+      }
+      setIsCheckingAuth(false);
+    });
+
+    return () => unsubscribe();
+  }, [pathname]);
+
+  // Enquanto o Firebase não responde, ou se o rastreio for negado -> NÃO RENDERIZA NADA
+  if (!gaId || isCheckingAuth || !allowTracking) return null;
 
   return (
     <>
